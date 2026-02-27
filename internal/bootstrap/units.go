@@ -67,6 +67,19 @@ UMask=0077
 		base += `NoNewPrivileges=yes
 ProtectSystem=strict
 `
+	} else {
+		// Sudo agents (sysadmin) need write access to commissioning paths.
+		// Without ProtectSystem=strict, the filesystem is rw by default,
+		// but we still bind-mount /srv/con/agents read-only above.
+		// Override with explicit ReadWritePaths for paths sysadmin must modify.
+		base += fmt.Sprintf(`ReadWritePaths=/srv/con/agents
+ReadWritePaths=/srv/con/config
+ReadWritePaths=/srv/con/contracts
+ReadWritePaths=/srv/con/logs
+ReadWritePaths=/etc/con
+ReadWritePaths=/etc/sudoers.d
+ReadWritePaths=/etc/systemd/system
+`)
 	}
 	return base
 }

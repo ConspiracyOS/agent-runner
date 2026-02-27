@@ -48,7 +48,7 @@ func BuildPicoConfig(agent conconfig.AgentConfig) *pcconfig.Config {
 	cfg.Agents.Defaults.RestrictToWorkspace = false
 	cfg.Agents.Defaults.Model = model
 	cfg.Agents.Defaults.MaxTokens = 8192
-	cfg.Agents.Defaults.MaxToolIterations = 50
+	cfg.Agents.Defaults.MaxToolIterations = 200
 
 	if key := os.Getenv("CON_OPENROUTER_API_KEY"); key != "" {
 		cfg.Providers.OpenRouter = pcconfig.ProviderConfig{

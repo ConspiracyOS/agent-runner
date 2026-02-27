@@ -5,7 +5,7 @@
 #
 # Mode 640 root:agents — only root and agents group can read.
 # Prevents non-agent processes from accessing API keys.
-tr '\0' '\n' < /proc/1/environ | grep '^CON_' > /etc/con/env 2>/dev/null
+tr '\0' '\n' < /proc/1/environ | grep -E '^(CON_|TS_)' > /etc/con/env 2>/dev/null
 chmod 640 /etc/con/env
 # Group may not exist on first boot (created by con-bootstrap after this runs).
 # Bootstrap fixes ownership after creating the agents group.

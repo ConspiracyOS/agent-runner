@@ -45,5 +45,8 @@ Cmnd_Alias CON_NET_OPS = \
     /usr/sbin/ip, \
     /usr/sbin/nft
 
+Cmnd_Alias CON_BOOTSTRAP_OPS = \
+    /usr/local/bin/con bootstrap
+
 a-sysadmin ALL=(root) NOPASSWD: CON_AGENT_OPS, CON_PKG_OPS, CON_USER_OPS, \
-    CON_FILE_OPS, CON_SVC_OPS, CON_NET_OPS
+    CON_FILE_OPS, CON_SVC_OPS, CON_NET_OPS, CON_BOOTSTRAP_OPS

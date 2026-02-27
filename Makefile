@@ -56,7 +56,7 @@ apply:
 	@if [ -z "$(IP)" ]; then echo "Error: container $(NAME) not running"; exit 1; fi
 	@echo "Applying profile: $(PROFILE) -> $(IP)"
 	tar -C configs/$(PROFILE) -cf - . | ssh $(SSH_OPTS) root@$(IP) 'tar -C /etc/con -xf -'
-	ssh $(SSH_OPTS) root@$(IP) 'con bootstrap'
+	ssh $(SSH_OPTS) root@$(IP) 'set -a; . /etc/con/env 2>/dev/null; set +a; con bootstrap'
 	@echo "Profile $(PROFILE) applied successfully."
 
 # Show agent status

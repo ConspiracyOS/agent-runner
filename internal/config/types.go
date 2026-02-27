@@ -16,9 +16,10 @@ type SystemConfig struct {
 }
 
 type InfraConfig struct {
-	TailscaleHostname string   `toml:"tailscale_hostname"`
-	SSHAuthorizedKeys []string `toml:"ssh_authorized_keys"`
-	SSHPort           int      `toml:"ssh_port"`
+	TailscaleHostname    string   `toml:"tailscale_hostname"`
+	TailscaleLoginServer string   `toml:"tailscale_login_server"`
+	SSHAuthorizedKeys    []string `toml:"ssh_authorized_keys"`
+	SSHPort              int      `toml:"ssh_port"`
 }
 
 type TierDefault struct {

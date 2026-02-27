@@ -31,8 +31,8 @@ func TestBuildPicoConfig(t *testing.T) {
 	if pcfg.Agents.Defaults.RestrictToWorkspace {
 		t.Error("expected RestrictToWorkspace=false")
 	}
-	if pcfg.Agents.Defaults.MaxToolIterations != 50 {
-		t.Errorf("expected MaxToolIterations=50, got %d", pcfg.Agents.Defaults.MaxToolIterations)
+	if pcfg.Agents.Defaults.MaxToolIterations != 200 {
+		t.Errorf("expected MaxToolIterations=200, got %d", pcfg.Agents.Defaults.MaxToolIterations)
 	}
 }
 

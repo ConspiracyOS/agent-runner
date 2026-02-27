@@ -31,6 +31,9 @@ func applyENVOverrides(cfg *Config) {
 	if v := os.Getenv("CON_INFRA_TAILSCALE_HOSTNAME"); v != "" {
 		cfg.Infra.TailscaleHostname = v
 	}
+	if v := os.Getenv("CON_INFRA_TAILSCALE_LOGIN_SERVER"); v != "" {
+		cfg.Infra.TailscaleLoginServer = v
+	}
 	if v := os.Getenv("CON_SSH_AUTHORIZED_KEYS"); v != "" {
 		cfg.Infra.SSHAuthorizedKeys = strings.Split(v, "\n")
 	}

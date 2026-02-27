@@ -146,14 +146,19 @@ EOF`)
 
 	// 9. Tailscale (if configured and TS_AUTHKEY available)
 	if cfg.Infra.TailscaleHostname != "" {
-		cmds = append(cmds, fmt.Sprintf(`if [ -n "$TS_AUTHKEY" ]; then
+		loginServerFlag := ""
+		if cfg.Infra.TailscaleLoginServer != "" {
+			loginServerFlag = fmt.Sprintf(" --login-server=%s", cfg.Infra.TailscaleLoginServer)
+		}
+		cmds = append(cmds, fmt.Sprintf(`TSKEY="${TS_AUTHKEY:-$TS_AUTH_KEY}"
+if [ -n "$TSKEY" ]; then
     tailscaled --state=/var/lib/tailscale/tailscaled.state &
     sleep 2
-    tailscale up --hostname=%s --authkey="$TS_AUTHKEY" --accept-routes
+    tailscale up --hostname=%s --authkey="$TSKEY"%s --accept-routes
     echo "tailscale: $(tailscale ip -4)"
 else
-    echo "warn: tailscale_hostname set but TS_AUTHKEY not found, skipping"
-fi`, cfg.Infra.TailscaleHostname))
+    echo "warn: tailscale_hostname set but TS_AUTHKEY/TS_AUTH_KEY not found, skipping"
+fi`, cfg.Infra.TailscaleHostname, loginServerFlag))
 	}
 
 	// 10. Dashboard (nginx serving static status page)
