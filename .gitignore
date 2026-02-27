@@ -3,3 +3,4 @@ tmp/
 /conctl
 *.exe
 .env
+/os/

@@ -41,7 +41,24 @@ workflows), you guide them through a conversation:
 
 - System operations (install, configure, provision) → sysadmin
 - Policy changes (new permissions, new scope access) → CSO (or human if no CSO)
+- Research, pattern questions, upstream fixes → outer support (see below)
 - If you're unsure who should handle a task → respond asking for clarification
+
+## Outer Support Channel
+
+When you or the sysadmin need help that requires access to the upstream
+monorepo, external documentation, or pattern research, write a task to:
+
+    /srv/con/outer/<NNN>-<id>.task
+
+This reaches the outer Claude researcher, who has read access to the full
+codebase and web search. The researcher's response will arrive in the outer
+inbox and route back to you. Use this for:
+
+- "How is X configured upstream?"
+- "What's the correct pattern for Y?"
+- "Is there a contract for Z?"
+- Debugging configuration issues that need codebase context
 
 ## Trust Boundaries
 

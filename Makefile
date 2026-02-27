@@ -1,4 +1,4 @@
-.PHONY: build test clean linux linux-arm64 image run stop task deploy
+.PHONY: build test clean linux linux-arm64 image run stop task deploy watcher outer-task
 
 # Build for current platform
 build:
@@ -38,6 +38,18 @@ task:
 deploy: image
 	-container kill conspiracyos 2>/dev/null; container rm conspiracyos 2>/dev/null
 	container run --name conspiracyos --env-file .env conspiracyos
+
+# Start the outer watcher (Claude Code researcher <-> inner agents)
+watcher:
+	./os/scripts/watcher.sh
+
+# Send a task to the outer Claude researcher
+# Usage: make outer-task MSG="how is network configured?"
+outer-task:
+	@if [ -z "$(MSG)" ]; then echo "Usage: make outer-task MSG=\"your message\""; exit 1; fi
+	@TASKID=$$(date +%s); \
+	printf '%s' '$(MSG)' > os/inbox/$${TASKID}.task && \
+	echo "Task $${TASKID}.task dropped into os/inbox"
 
 # Run all tests
 test:

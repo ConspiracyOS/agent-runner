@@ -59,6 +59,7 @@ func PlanProvision(cfg *config.Config) []string {
 	cmds = append(cmds, "install -d -m 755 /srv/con/logs")
 	cmds = append(cmds, "install -d -m 755 /srv/con/logs/audit")
 	cmds = append(cmds, "install -d -m 755 /srv/con/scopes")
+	cmds = append(cmds, "install -d -m 755 /srv/con/outer") // outer-bound requests from inner agents
 
 	// Per-agent dirs
 	for _, a := range cfg.Agents {
@@ -88,6 +89,10 @@ func PlanProvision(cfg *config.Config) []string {
 	cmds = append(cmds, "setfacl -m u:a-sysadmin:rwx /srv/con/config/agents/")
 	cmds = append(cmds, "setfacl -m u:a-sysadmin:rwx /srv/con/contracts/")
 	cmds = append(cmds, "setfacl -m u:a-sysadmin:rwx /srv/con/logs/audit/")
+
+	// Outer dir: concierge and sysadmin can write requests for outer support
+	cmds = append(cmds, "setfacl -m u:a-concierge:rwx /srv/con/outer/")
+	cmds = append(cmds, "setfacl -m u:a-sysadmin:rwx /srv/con/outer/")
 
 	// 5. Sudoers for sysadmin
 	// Patterns must match commands in commission-agent.md skill exactly.
