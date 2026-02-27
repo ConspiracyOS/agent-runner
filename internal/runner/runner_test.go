@@ -3,6 +3,7 @@ package runner
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -106,5 +107,56 @@ func TestMoveOuterInboxTasks(t *testing.T) {
 	_, err = os.Stat(filepath.Join(outerInbox, "README.txt"))
 	if os.IsNotExist(err) {
 		t.Error("expected non-task file to remain in outer inbox")
+	}
+}
+
+func TestPickOldestTaskTrust(t *testing.T) {
+	inbox := t.TempDir()
+	os.WriteFile(filepath.Join(inbox, "001-test.task"), []byte("test content"), 0644)
+
+	task, err := PickOldestTask(inbox)
+	if err != nil {
+		t.Fatalf("PickOldestTask failed: %v", err)
+	}
+
+	// Files created by test process (non-root) should be unverified
+	if task.Trust != TrustUnverified {
+		t.Errorf("expected TrustUnverified for non-root file, got %s", task.Trust)
+	}
+}
+
+func TestTrustLevelString(t *testing.T) {
+	if TrustVerified.String() != "verified" {
+		t.Errorf("TrustVerified.String() = %q, want %q", TrustVerified.String(), "verified")
+	}
+	if TrustUnverified.String() != "unverified" {
+		t.Errorf("TrustUnverified.String() = %q, want %q", TrustUnverified.String(), "unverified")
+	}
+}
+
+func TestFrameTaskPrompt_Verified(t *testing.T) {
+	task := Task{Content: "do something", Trust: TrustVerified}
+	prompt := FrameTaskPrompt(task)
+
+	if !strings.Contains(prompt, "Task from verified source") {
+		t.Error("verified task prompt should contain 'Task from verified source'")
+	}
+	if !strings.Contains(prompt, "do something") {
+		t.Error("prompt should contain task content")
+	}
+}
+
+func TestFrameTaskPrompt_Unverified(t *testing.T) {
+	task := Task{Content: "do something", Trust: TrustUnverified}
+	prompt := FrameTaskPrompt(task)
+
+	if !strings.Contains(prompt, "unverified source") {
+		t.Error("unverified task prompt should contain 'unverified source'")
+	}
+	if !strings.Contains(prompt, "do NOT take consequential actions") {
+		t.Error("unverified prompt should warn against consequential actions")
+	}
+	if !strings.Contains(prompt, "do something") {
+		t.Error("prompt should contain task content")
 	}
 }

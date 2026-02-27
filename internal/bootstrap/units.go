@@ -36,11 +36,46 @@ WantedBy=timers.target
 	return units
 }
 
+// hasSudo returns true if the agent has a role that grants sudoers access.
+// These agents cannot use NoNewPrivileges or ProtectSystem=strict.
+func hasSudo(agent config.AgentConfig) bool {
+	for _, r := range agent.Roles {
+		if r == "sysadmin" {
+			return true
+		}
+	}
+	return false
+}
+
+// serviceHardening returns systemd hardening directives for an agent.
+// Agents with sudo get a reduced set (no NoNewPrivileges, no ProtectSystem=strict).
+func serviceHardening(agent config.AgentConfig) string {
+	user := "a-" + agent.Name
+	base := fmt.Sprintf(`PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+ProtectHome=tmpfs
+BindPaths=/home/%s
+BindPaths=/srv/con/agents/%s
+BindReadOnlyPaths=/srv/con/agents
+UMask=0077
+`, user, agent.Name)
+
+	if !hasSudo(agent) {
+		base += `NoNewPrivileges=yes
+ProtectSystem=strict
+`
+	}
+	return base
+}
+
 // GenerateUnits returns a map of filename → unit file content for a given agent.
 func GenerateUnits(agent config.AgentConfig) map[string]string {
 	units := make(map[string]string)
 	user := "a-" + agent.Name
 	svcName := "con-" + agent.Name
+	hardening := serviceHardening(agent)
 
 	// Service unit (always generated)
 	// EnvironmentFile loads API keys from /etc/con/env (written at container start)
@@ -56,10 +91,10 @@ ExecStart=/usr/local/bin/con run %s
 WorkingDirectory=/srv/con/agents/%s/workspace
 Environment=HOME=/home/%s
 EnvironmentFile=-/etc/con/env
-
+%s
 [Install]
 WantedBy=multi-user.target
-`, agent.Name, user, agent.Name, agent.Name, user)
+`, agent.Name, user, agent.Name, agent.Name, user, hardening)
 
 	units[svcName+".service"] = svc
 
@@ -94,10 +129,10 @@ Environment=HOME=/home/%s
 EnvironmentFile=-/etc/con/env
 Restart=on-failure
 RestartSec=5
-
+%s
 [Install]
 WantedBy=multi-user.target
-`, agent.Name, user, agent.Name, agent.Name, user)
+`, agent.Name, user, agent.Name, agent.Name, user, hardening)
 		units[svcName+".service"] = svc
 
 	case "cron":

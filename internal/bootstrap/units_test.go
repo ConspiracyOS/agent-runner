@@ -38,6 +38,63 @@ func TestGenerateOnDemandUnits(t *testing.T) {
 	}
 }
 
+func TestServiceHardeningWorker(t *testing.T) {
+	agent := config.AgentConfig{
+		Name:  "researcher",
+		Tier:  "worker",
+		Mode:  "on-demand",
+		Roles: []string{"researcher"},
+	}
+
+	units := GenerateUnits(agent)
+	svc := units["con-researcher.service"]
+
+	// Workers get full hardening
+	for _, directive := range []string{
+		"NoNewPrivileges=yes",
+		"ProtectSystem=strict",
+		"PrivateTmp=yes",
+		"PrivateDevices=yes",
+		"ProtectHome=tmpfs",
+		"UMask=0077",
+	} {
+		if !strings.Contains(svc, directive) {
+			t.Errorf("worker service should contain %s", directive)
+		}
+	}
+}
+
+func TestServiceHardeningSysadmin(t *testing.T) {
+	agent := config.AgentConfig{
+		Name:  "sysadmin",
+		Tier:  "operator",
+		Mode:  "on-demand",
+		Roles: []string{"sysadmin"},
+	}
+
+	units := GenerateUnits(agent)
+	svc := units["con-sysadmin.service"]
+
+	// Sysadmin needs sudo — no NoNewPrivileges or ProtectSystem=strict
+	if strings.Contains(svc, "NoNewPrivileges=yes") {
+		t.Error("sysadmin service must NOT have NoNewPrivileges (breaks sudo)")
+	}
+	if strings.Contains(svc, "ProtectSystem=strict") {
+		t.Error("sysadmin service must NOT have ProtectSystem=strict (breaks sudo writes to /etc)")
+	}
+
+	// But should still have other hardening
+	for _, directive := range []string{
+		"PrivateTmp=yes",
+		"PrivateDevices=yes",
+		"UMask=0077",
+	} {
+		if !strings.Contains(svc, directive) {
+			t.Errorf("sysadmin service should still contain %s", directive)
+		}
+	}
+}
+
 func TestGenerateCronUnits(t *testing.T) {
 	agent := config.AgentConfig{
 		Name: "reporter",
