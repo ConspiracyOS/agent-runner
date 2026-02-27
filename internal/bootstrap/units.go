@@ -59,27 +59,26 @@ ProtectControlGroups=yes
 ProtectHome=tmpfs
 BindPaths=/home/%s
 BindPaths=/srv/con/agents/%s
-BindReadOnlyPaths=/srv/con/agents
 UMask=0077
 `, user, agent.Name)
 
 	if !hasSudo(agent) {
-		base += `NoNewPrivileges=yes
+		// Non-sudo agents: strict read-only filesystem, agents dir read-only
+		base += `BindReadOnlyPaths=/srv/con/agents
+NoNewPrivileges=yes
 ProtectSystem=strict
 `
 	} else {
-		// Sudo agents (sysadmin) need write access to commissioning paths.
-		// Without ProtectSystem=strict, the filesystem is rw by default,
-		// but we still bind-mount /srv/con/agents read-only above.
-		// Override with explicit ReadWritePaths for paths sysadmin must modify.
-		base += fmt.Sprintf(`ReadWritePaths=/srv/con/agents
+		// Sudo agents (sysadmin) need write access to provision new agents,
+		// update config, write contracts/logs, and install systemd units.
+		base += `ReadWritePaths=/srv/con/agents
 ReadWritePaths=/srv/con/config
 ReadWritePaths=/srv/con/contracts
 ReadWritePaths=/srv/con/logs
 ReadWritePaths=/etc/con
 ReadWritePaths=/etc/sudoers.d
 ReadWritePaths=/etc/systemd/system
-`)
+`
 	}
 	return base
 }
