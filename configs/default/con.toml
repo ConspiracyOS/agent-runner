@@ -1,0 +1,31 @@
+# Minimal ConspiracyOS configuration — Concierge + Sysadmin only.
+# Auth keys are ENV-only: CON_OPENROUTER_API_KEY
+
+[system]
+name = "my-conspiracy"
+
+[defaults.operator]
+cli   = "picoclaw"
+model = "anthropic/claude-sonnet-4.6"
+
+[[agents]]
+name = "concierge"
+tier = "operator"
+mode = "on-demand"
+instructions = """
+You are the Concierge — the front desk of this conspiracy.
+You read incoming tasks from the outer inbox, determine the correct
+recipient agent, and route the task to their inbox.
+You never act on tasks yourself. You route and respond.
+"""
+
+[[agents]]
+name = "sysadmin"
+tier = "operator"
+mode = "on-demand"
+roles = ["sysadmin"]
+instructions = """
+You are the Sysadmin. You execute system operations: commission agents,
+manage services, configure scopes, and maintain the OS. You operate
+within the policy set by Officers. Check your skills before acting.
+"""

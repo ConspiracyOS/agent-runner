@@ -1,0 +1,202 @@
+package runner
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/ConspiracyOS/agent-runner/internal/assembler"
+	"github.com/ConspiracyOS/agent-runner/internal/config"
+)
+
+type Task struct {
+	Path    string
+	Content string
+}
+
+const maxInboxSize = 32 * 1024 // 32KB buffer
+
+// PickOldestTask reads the inbox and returns the lexicographically first .task file.
+func PickOldestTask(inboxPath string) (Task, error) {
+	entries, err := os.ReadDir(inboxPath)
+	if err != nil {
+		return Task{}, fmt.Errorf("reading inbox: %w", err)
+	}
+
+	var tasks []string
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".task") {
+			tasks = append(tasks, e.Name())
+		}
+	}
+
+	if len(tasks) == 0 {
+		return Task{}, fmt.Errorf("no tasks in inbox")
+	}
+
+	sort.Strings(tasks)
+	path := filepath.Join(inboxPath, tasks[0])
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return Task{}, fmt.Errorf("reading task %s: %w", path, err)
+	}
+
+	content := string(data)
+	if len(data) > maxInboxSize {
+		// Oversized — send reference path instead of content
+		content = fmt.Sprintf("[Attachment: file too large (%d bytes). See: %s]", len(data), path)
+	}
+
+	return Task{Path: path, Content: content}, nil
+}
+
+// RouteOutput writes the agent's response to outbox and moves the task to processed.
+func RouteOutput(task Task, output string, outboxPath string, processedPath string) error {
+	// Write output to outbox
+	ts := time.Now().Format("20060102-150405")
+	base := filepath.Base(task.Path)
+	outFile := filepath.Join(outboxPath, fmt.Sprintf("%s-%s.response", ts, strings.TrimSuffix(base, ".task")))
+	if err := os.WriteFile(outFile, []byte(output), 0644); err != nil {
+		return fmt.Errorf("writing output: %w", err)
+	}
+
+	// Move task to processed
+	destPath := filepath.Join(processedPath, base)
+	if err := os.Rename(task.Path, destPath); err != nil {
+		return fmt.Errorf("moving task to processed: %w", err)
+	}
+
+	return nil
+}
+
+// AssembleAgentsMD assembles AGENTS.md for an agent and writes it to their home dir.
+func AssembleAgentsMD(agent config.AgentConfig) error {
+	homeDir := fmt.Sprintf("/home/a-%s", agent.Name)
+	layers := assembler.Layers{
+		OuterRoot:          "/etc/con",
+		InnerRoot:          "/srv/con/config",
+		Roles:              agent.Roles,
+		Groups:             agent.Groups,
+		Scopes:             agent.Scopes,
+		AgentName:          agent.Name,
+		InlineInstructions: agent.Instructions,
+	}
+	agentsMD, err := assembler.Assemble(layers)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(homeDir, "AGENTS.md"), []byte(agentsMD), 0644)
+}
+
+// Run executes a single agent run: assemble context, pick task, invoke PicoClaw, route output.
+func Run(agentName string, cfg *config.Config) error {
+	agent := cfg.ResolvedAgent(agentName)
+	if agent.Name == "" {
+		return fmt.Errorf("agent %q not found in config", agentName)
+	}
+
+	homeDir := fmt.Sprintf("/home/a-%s", agentName)
+	agentDir := fmt.Sprintf("/srv/con/agents/%s", agentName)
+	inboxDir := filepath.Join(agentDir, "inbox")
+	outboxDir := filepath.Join(agentDir, "outbox")
+	processedDir := filepath.Join(agentDir, "processed")
+
+	// 1. Read pre-compiled AGENTS.md (written by bootstrap/commission)
+	agentsMDPath := filepath.Join(homeDir, "AGENTS.md")
+	agentsMDBytes, err := os.ReadFile(agentsMDPath)
+	if err != nil {
+		return fmt.Errorf("reading AGENTS.md: %w (run bootstrap first)", err)
+	}
+	agentsMD := string(agentsMDBytes)
+
+	// 2. Pick task from inbox
+	task, err := PickOldestTask(inboxDir)
+	if err != nil {
+		return fmt.Errorf("picking task: %w", err)
+	}
+
+	// 3. Build the prompt: AGENTS.md + skills + task content
+	var skillsContent string
+	skillsDir := filepath.Join(agentDir, "workspace", "skills")
+	if entries, err := os.ReadDir(skillsDir); err == nil {
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+				continue
+			}
+			data, err := os.ReadFile(filepath.Join(skillsDir, e.Name()))
+			if err == nil {
+				skillsContent += fmt.Sprintf("\n\n## Skill: %s\n\n%s", strings.TrimSuffix(e.Name(), ".md"), string(data))
+			}
+		}
+	}
+
+	prompt := fmt.Sprintf("Context (your instructions):\n\n%s", agentsMD)
+	if skillsContent != "" {
+		prompt += fmt.Sprintf("\n\n---\n\n# Skills Reference\n%s", skillsContent)
+	}
+	prompt += fmt.Sprintf("\n\n---\n\nTask:\n\n%s", task.Content)
+
+	// 4. Invoke PicoClaw in-process
+	sessionKey := fmt.Sprintf("con:%s", agentName)
+	ctx := context.Background()
+	output, err := InvokeAgent(ctx, agent, prompt, sessionKey)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "agent loop error: %v\n", err)
+	}
+
+	// 5. Write audit log
+	auditLine := fmt.Sprintf("%s [%s] run: processed %s\n",
+		time.Now().Format(time.RFC3339), agentName, filepath.Base(task.Path))
+	auditPath := fmt.Sprintf("/srv/con/logs/audit/%s.log", time.Now().Format("2006-01-02"))
+	f, err := os.OpenFile(auditPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err == nil {
+		f.WriteString(auditLine)
+		f.Close()
+	}
+
+	// 6. Route output
+	if err := RouteOutput(task, output, outboxDir, processedDir); err != nil {
+		return fmt.Errorf("routing output: %w", err)
+	}
+
+	return nil
+}
+
+// MoveOuterInboxTasks moves tasks from the outer inbox to the concierge's inbox.
+// Called before the concierge's main run loop.
+func MoveOuterInboxTasks() error {
+	return moveOuterInboxTasksTo("/srv/con/inbox", "/srv/con/agents/concierge/inbox")
+}
+
+// moveOuterInboxTasksTo is the testable implementation of MoveOuterInboxTasks.
+func moveOuterInboxTasksTo(outerInbox, conciergeInbox string) error {
+	entries, err := os.ReadDir(outerInbox)
+	if err != nil {
+		return fmt.Errorf("reading outer inbox: %w", err)
+	}
+
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".task") {
+			continue
+		}
+		src := filepath.Join(outerInbox, e.Name())
+		dst := filepath.Join(conciergeInbox, e.Name())
+		if err := os.Rename(src, dst); err != nil {
+			// If rename fails (cross-device), copy+delete
+			data, readErr := os.ReadFile(src)
+			if readErr != nil {
+				continue
+			}
+			if writeErr := os.WriteFile(dst, data, 0644); writeErr != nil {
+				continue
+			}
+			os.Remove(src)
+		}
+	}
+	return nil
+}

@@ -1,0 +1,14 @@
+id: CON-SYS-002
+description: Memory available must remain above threshold
+type: detective
+frequency: 60s
+scope: system
+checks:
+  - name: memory_available_percentage
+    command:
+      run: "free | awk '/^Mem:/ {printf \"%.0f\", $7/$2 * 100}'"
+      test: "[ $RESULT -ge 10 ]"
+    on_fail:
+      action: halt_agents
+      escalate: sysadmin
+      message: "CON-SYS-002 FAILED: available memory below 10%"

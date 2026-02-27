@@ -1,0 +1,14 @@
+id: CON-SYS-003
+description: Load average must not exceed 2x CPU cores
+type: detective
+frequency: 60s
+scope: system
+checks:
+  - name: load_average
+    command:
+      run: "echo $(cat /proc/loadavg | cut -d' ' -f1) $(nproc) | awk '{printf \"%.0f\", ($1 / $2) * 100}'"
+      test: "[ $RESULT -le 200 ]"
+    on_fail:
+      action: halt_agents
+      escalate: sysadmin
+      message: "CON-SYS-003 FAILED: load average exceeds 2.0x CPU cores"

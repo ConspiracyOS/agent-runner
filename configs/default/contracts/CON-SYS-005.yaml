@@ -1,0 +1,14 @@
+id: CON-SYS-005
+description: Audit log directory must be writable
+type: detective
+frequency: 60s
+scope: system
+checks:
+  - name: audit_log_writable
+    command:
+      run: "touch /srv/con/logs/audit/.healthcheck-probe && rm /srv/con/logs/audit/.healthcheck-probe && echo ok"
+      test: "[ \"$RESULT\" = \"ok\" ]"
+    on_fail:
+      action: halt_agents
+      escalate: sysadmin
+      message: "CON-SYS-005 FAILED: audit log directory is not writable"

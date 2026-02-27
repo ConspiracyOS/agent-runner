@@ -1,0 +1,14 @@
+id: CON-AGENT-001
+description: All agent directories must have correct permissions and ownership
+type: detective
+frequency: 60s
+scope: system
+checks:
+  - name: agent_dir_permissions
+    script:
+      path: scripts/check-agent-perms.sh
+      timeout: 10s
+    on_fail:
+      action: alert
+      escalate: sysadmin
+      message: "CON-AGENT-001 FAILED: agent directory permissions or ownership incorrect"

@@ -1,0 +1,14 @@
+id: CON-SYS-001
+description: Disk free space must remain above threshold
+type: detective
+frequency: 60s
+scope: system
+checks:
+  - name: disk_free_percentage
+    command:
+      run: "df /srv/con --output=pcent | tail -1 | tr -d ' %' | xargs -I{} expr 100 - {}"
+      test: "[ $RESULT -ge 15 ]"
+    on_fail:
+      action: halt_agents
+      escalate: sysadmin
+      message: "CON-SYS-001 FAILED: disk free below 15%"

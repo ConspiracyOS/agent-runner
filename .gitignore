@@ -1,0 +1,6 @@
+./tmp/
+tmp/
+con
+conctl
+*.exe
+.env
