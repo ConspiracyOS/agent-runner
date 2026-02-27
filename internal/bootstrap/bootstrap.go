@@ -16,6 +16,7 @@ func PlanProvision(cfg *config.Config) []string {
 	cmds = append(cmds, "groupadd -f officers")
 	cmds = append(cmds, "groupadd -f operators")
 	cmds = append(cmds, "groupadd -f workers")
+	cmds = append(cmds, "groupadd -f trusted")
 
 	// Can-task groups (who can write to whose inbox)
 	for _, a := range cfg.Agents {

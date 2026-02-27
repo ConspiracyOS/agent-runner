@@ -131,6 +131,25 @@ func TestGenerateHealthcheckUnits(t *testing.T) {
 	}
 }
 
+func TestProvisionTrustedGroup(t *testing.T) {
+	cfg := &config.Config{
+		Agents: []config.AgentConfig{
+			{Name: "concierge", Tier: "operator"},
+		},
+	}
+	cmds := PlanProvision(cfg)
+	found := false
+	for _, c := range cmds {
+		if c == "groupadd -f trusted" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("PlanProvision should create trusted group")
+	}
+}
+
 func TestOuterInboxWatcher(t *testing.T) {
 	cfg := &config.Config{
 		System: config.SystemConfig{Name: "test"},

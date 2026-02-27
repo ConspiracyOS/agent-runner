@@ -57,6 +57,7 @@ type AgentConfig struct {
 	Mode         string   `toml:"mode"`
 	Cron         string   `toml:"cron"`
 	CLI          string   `toml:"cli"`
+	CLIArgs      []string `toml:"cli_args"`
 	Model        string   `toml:"model"`
 	MaxSessions  int      `toml:"max_sessions"`
 	Instructions string   `toml:"instructions"`

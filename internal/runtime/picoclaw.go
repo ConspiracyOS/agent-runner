@@ -1,4 +1,4 @@
-package runner
+package runtime
 
 import (
 	"context"
@@ -13,8 +13,28 @@ import (
 	conconfig "github.com/ConspiracyOS/agent-runner/internal/config"
 )
 
+// PicoClaw runs agents using the in-process PicoClaw library.
+type PicoClaw struct {
+	Agent conconfig.AgentConfig
+}
+
+func (p *PicoClaw) Invoke(ctx context.Context, prompt, sessionKey string) (string, error) {
+	cfg := BuildPicoConfig(p.Agent)
+
+	provider, err := providers.CreateProvider(cfg)
+	if err != nil {
+		return "", fmt.Errorf("creating LLM provider: %w", err)
+	}
+
+	msgBus := bus.NewMessageBus()
+	defer msgBus.Close()
+
+	loop := pcagent.NewAgentLoop(cfg, msgBus, provider)
+
+	return loop.ProcessDirect(ctx, prompt, sessionKey)
+}
+
 // BuildPicoConfig creates a PicoClaw config from a ConspiracyOS agent config.
-// This replaces writing config.json to disk — config is built in-memory.
 func BuildPicoConfig(agent conconfig.AgentConfig) *pcconfig.Config {
 	model := agent.Model
 	if model == "" {
@@ -30,7 +50,6 @@ func BuildPicoConfig(agent conconfig.AgentConfig) *pcconfig.Config {
 	cfg.Agents.Defaults.MaxTokens = 8192
 	cfg.Agents.Defaults.MaxToolIterations = 50
 
-	// Configure provider from environment
 	if key := os.Getenv("CON_OPENROUTER_API_KEY"); key != "" {
 		cfg.Providers.OpenRouter = pcconfig.ProviderConfig{
 			APIKey: key,
@@ -46,22 +65,4 @@ func BuildPicoConfig(agent conconfig.AgentConfig) *pcconfig.Config {
 	}
 
 	return cfg
-}
-
-// InvokeAgent runs PicoClaw in-process for a single agent task.
-// Returns the agent's text response.
-func InvokeAgent(ctx context.Context, agent conconfig.AgentConfig, prompt, sessionKey string) (string, error) {
-	cfg := BuildPicoConfig(agent)
-
-	provider, err := providers.CreateProvider(cfg)
-	if err != nil {
-		return "", fmt.Errorf("creating LLM provider: %w", err)
-	}
-
-	msgBus := bus.NewMessageBus()
-	defer msgBus.Close()
-
-	loop := pcagent.NewAgentLoop(cfg, msgBus, provider)
-
-	return loop.ProcessDirect(ctx, prompt, sessionKey)
 }

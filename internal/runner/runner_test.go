@@ -2,6 +2,7 @@ package runner
 
 import (
 	"os"
+	"os/user"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -158,5 +159,49 @@ func TestFrameTaskPrompt_Unverified(t *testing.T) {
 	}
 	if !strings.Contains(prompt, "do something") {
 		t.Error("prompt should contain task content")
+	}
+}
+
+func TestIsTrustedUID_Root(t *testing.T) {
+	if !isTrustedUID(0) {
+		t.Error("uid 0 should always be trusted")
+	}
+}
+
+func TestIsTrustedUID_NonRoot(t *testing.T) {
+	uid := uint32(os.Getuid())
+	if uid == 0 {
+		t.Skip("test must run as non-root")
+	}
+	if isTrustedUID(uid) {
+		t.Error("non-root user without trusted group membership should not be trusted")
+	}
+}
+
+func TestIsTrustedUID_WithGroupOverride(t *testing.T) {
+	uid := uint32(os.Getuid())
+	if uid == 0 {
+		t.Skip("test must run as non-root")
+	}
+
+	u, err := user.Current()
+	if err != nil {
+		t.Fatalf("looking up current user: %v", err)
+	}
+	gids, err := u.GroupIds()
+	if err != nil || len(gids) == 0 {
+		t.Skip("cannot determine user groups")
+	}
+	g, err := user.LookupGroupId(gids[0])
+	if err != nil {
+		t.Skip("cannot look up group name")
+	}
+
+	old := TrustedGroupName
+	TrustedGroupName = g.Name
+	defer func() { TrustedGroupName = old }()
+
+	if !isTrustedUID(uid) {
+		t.Errorf("user in group %q should be trusted when TrustedGroupName=%q", g.Name, g.Name)
 	}
 }

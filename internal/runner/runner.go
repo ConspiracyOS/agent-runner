@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/user"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -12,15 +13,16 @@ import (
 
 	"github.com/ConspiracyOS/agent-runner/internal/assembler"
 	"github.com/ConspiracyOS/agent-runner/internal/config"
+	conruntime "github.com/ConspiracyOS/agent-runner/internal/runtime"
 )
 
 // TrustLevel indicates the provenance of a task based on file ownership.
-// Root-owned files (uid 0) are verified — they originate from the user or system.
+// Files owned by root or a member of the trusted group are verified.
 // Agent-owned files are unverified — the routing agent may have been influenced by external content.
 type TrustLevel int
 
 const (
-	TrustVerified   TrustLevel = iota // Root-owned: user or system origin
+	TrustVerified   TrustLevel = iota // Root or trusted-group owned: user or system origin
 	TrustUnverified                   // Agent-owned: may have been influenced by external content
 )
 
@@ -29,6 +31,36 @@ func (t TrustLevel) String() string {
 		return "verified"
 	}
 	return "unverified"
+}
+
+// TrustedGroupName is the group whose members' task files are treated as verified.
+// Root (uid 0) is always trusted regardless of group membership.
+var TrustedGroupName = "trusted"
+
+// isTrustedUID returns true if uid is root (0) or if the user is a member of
+// TrustedGroupName. Returns false if the user or group cannot be resolved.
+func isTrustedUID(uid uint32) bool {
+	if uid == 0 {
+		return true
+	}
+	u, err := user.LookupId(fmt.Sprintf("%d", uid))
+	if err != nil {
+		return false
+	}
+	gids, err := u.GroupIds()
+	if err != nil {
+		return false
+	}
+	tg, err := user.LookupGroup(TrustedGroupName)
+	if err != nil {
+		return false
+	}
+	for _, gid := range gids {
+		if gid == tg.Gid {
+			return true
+		}
+	}
+	return false
 }
 
 type Task struct {
@@ -71,11 +103,11 @@ func PickOldestTask(inboxPath string) (Task, error) {
 		content = fmt.Sprintf("[Attachment: file too large (%d bytes). See: %s]", len(data), path)
 	}
 
-	// Provenance: root-owned files are trusted (user/system origin).
+	// Provenance: root-owned or trusted-group-owned files are verified (user/system origin).
 	// Agent-owned files are unverified (may have been influenced by external content).
 	trust := TrustUnverified
 	if info, err := os.Stat(path); err == nil {
-		if stat, ok := info.Sys().(*syscall.Stat_t); ok && stat.Uid == 0 {
+		if stat, ok := info.Sys().(*syscall.Stat_t); ok && isTrustedUID(stat.Uid) {
 			trust = TrustVerified
 		}
 	}
@@ -180,12 +212,13 @@ func Run(agentName string, cfg *config.Config) error {
 	}
 	prompt += FrameTaskPrompt(task)
 
-	// 4. Invoke PicoClaw in-process
+	// 4. Invoke runtime
 	sessionKey := fmt.Sprintf("con:%s", agentName)
 	ctx := context.Background()
-	output, err := InvokeAgent(ctx, agent, prompt, sessionKey)
+	rt := conruntime.New(agent)
+	output, err := rt.Invoke(ctx, prompt, sessionKey)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "agent loop error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "agent runtime error: %v\n", err)
 	}
 
 	// 5. Write audit log
