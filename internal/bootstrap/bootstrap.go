@@ -41,7 +41,8 @@ func PlanProvision(cfg *config.Config) []string {
 			"useradd -r -m -d /home/%s -s /bin/bash -g agents -G %s %s || true",
 			user, groups, user,
 		))
-		cmds = append(cmds, fmt.Sprintf("chmod 700 /home/%s", user))
+		// Ensure home dir exists even if user was pre-created (useradd -m only works on new users)
+		cmds = append(cmds, fmt.Sprintf("install -d -o %s -g agents -m 700 /home/%s", user, user))
 	}
 
 	// 3. Create directory structure

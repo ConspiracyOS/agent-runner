@@ -136,9 +136,9 @@ func RouteOutput(task Task, output string, outboxPath string, processedPath stri
 		return fmt.Errorf("writing output: %w", err)
 	}
 
-	// Move task to processed
+	// Move task to processed (tolerate ENOENT — agent may have moved it already)
 	destPath := filepath.Join(processedPath, base)
-	if err := os.Rename(task.Path, destPath); err != nil {
+	if err := os.Rename(task.Path, destPath); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("moving task to processed: %w", err)
 	}
 

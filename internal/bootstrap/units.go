@@ -49,7 +49,8 @@ func hasSudo(agent config.AgentConfig) bool {
 }
 
 // serviceHardening returns systemd hardening directives for an agent.
-// Agents with sudo get a reduced set (no NoNewPrivileges, no ProtectSystem=strict).
+// Three levels: sysadmin (broad write), officer (delegation write), worker (strict read-only).
+// Inter-agent access control is handled by POSIX ACLs, not systemd namespacing.
 func serviceHardening(agent config.AgentConfig) string {
 	user := "a-" + agent.Name
 	base := fmt.Sprintf(`PrivateTmp=yes
@@ -62,15 +63,8 @@ BindPaths=/srv/con/agents/%s
 UMask=0077
 `, user, agent.Name)
 
-	if !hasSudo(agent) {
-		// Non-sudo agents: strict read-only filesystem, agents dir read-only
-		base += `BindReadOnlyPaths=/srv/con/agents
-NoNewPrivileges=yes
-ProtectSystem=strict
-`
-	} else {
-		// Sudo agents (sysadmin) need write access to provision new agents,
-		// update config, write contracts/logs, and install systemd units.
+	if hasSudo(agent) {
+		// Sysadmin: broad write access for commissioning, config, systemd units.
 		base += `ReadWritePaths=/srv/con/agents
 ReadWritePaths=/srv/con/config
 ReadWritePaths=/srv/con/contracts
@@ -78,6 +72,23 @@ ReadWritePaths=/srv/con/logs
 ReadWritePaths=/etc/con
 ReadWritePaths=/etc/sudoers.d
 ReadWritePaths=/etc/systemd/system
+`
+	} else if agent.Tier == "worker" {
+		// Workers: strict lockdown, agents dir read-only.
+		// Cannot task other agents — all routing goes through concierge.
+		base += `BindReadOnlyPaths=/srv/con/agents
+NoNewPrivileges=yes
+ProtectSystem=strict
+`
+	} else {
+		// Officers and operators: read-only root, but can write to agent inboxes
+		// (for routing/delegation), produce artifacts, and write audit logs.
+		// POSIX ACLs control which inboxes each agent can access.
+		base += `NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/srv/con/agents
+ReadWritePaths=/srv/con/artifacts
+ReadWritePaths=/srv/con/logs/audit
 `
 	}
 	return base
