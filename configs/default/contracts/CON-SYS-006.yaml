@@ -1,0 +1,14 @@
+id: CON-SYS-006
+description: /etc/con/env must be readable by the agents group
+type: detective
+frequency: 60s
+scope: system
+checks:
+  - name: env_file_group_readable
+    command:
+      run: "stat -c '%G %a' /etc/con/env"
+      test: "echo \"$RESULT\" | awk '{g=$1; m=$2; print (g==\"agents\" && (m+0)%1000>=40) ? 0 : 1}' | grep -q 0"
+    on_fail:
+      action: alert
+      escalate: sysadmin
+      message: "CON-SYS-006 FAILED: /etc/con/env not readable by agents group"

@@ -150,6 +150,68 @@ func TestProvisionTrustedGroup(t *testing.T) {
 	}
 }
 
+func TestProvisionSudoersFromProfile(t *testing.T) {
+	cfg := &config.Config{
+		Agents: []config.AgentConfig{
+			{Name: "concierge", Tier: "operator"},
+			{Name: "sysadmin", Tier: "operator", Roles: []string{"sysadmin"}},
+		},
+	}
+	cmds := PlanProvision(cfg)
+
+	// Should copy sudoers from profile, not hardcode them
+	foundCopy := false
+	foundValidate := false
+	for _, c := range cmds {
+		if strings.Contains(c, "cp /etc/con/sudoers.d/") && strings.Contains(c, "/etc/sudoers.d/") {
+			foundCopy = true
+		}
+		if strings.Contains(c, "visudo -c") {
+			foundValidate = true
+		}
+	}
+	if !foundCopy {
+		t.Error("expected sudoers copy from /etc/con/sudoers.d/ to /etc/sudoers.d/")
+	}
+	if !foundValidate {
+		t.Error("expected visudo -c validation after sudoers install")
+	}
+
+	// Should NOT contain hardcoded CONSPIRACY_OPS
+	for _, c := range cmds {
+		if strings.Contains(c, "Cmnd_Alias CONSPIRACY_OPS") {
+			t.Error("sudoers should come from profile files, not be hardcoded in Go")
+		}
+	}
+}
+
+func TestDashboardDisabledStopsNginx(t *testing.T) {
+	cfg := &config.Config{
+		Dashboard: config.DashboardConfig{Enabled: false, Port: 8080, Bind: "0.0.0.0"},
+		Agents: []config.AgentConfig{
+			{Name: "concierge", Tier: "operator"},
+		},
+	}
+	cmds := PlanProvision(cfg)
+
+	foundDisable := false
+	for _, c := range cmds {
+		if strings.Contains(c, "systemctl disable") && strings.Contains(c, "nginx") {
+			foundDisable = true
+		}
+	}
+	if !foundDisable {
+		t.Error("expected nginx disable when dashboard is disabled")
+	}
+
+	// Should NOT enable nginx
+	for _, c := range cmds {
+		if strings.Contains(c, "systemctl enable") && strings.Contains(c, "nginx") {
+			t.Error("should not enable nginx when dashboard is disabled")
+		}
+	}
+}
+
 func TestOuterInboxWatcher(t *testing.T) {
 	cfg := &config.Config{
 		System: config.SystemConfig{Name: "test"},

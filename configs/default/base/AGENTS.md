@@ -23,7 +23,7 @@ is inspectable with standard Linux tools.
 | `/etc/con/` | Outer configuration — read-only, set by the human operator |
 | `/srv/con/config/` | Inner configuration — runtime config, CSO/sysadmin managed |
 | `~/AGENTS.md` | Your assembled instructions for this session |
-| `~/skills/` | Your available skills for this session |
+| `~/workspace/skills/` | Your available skills for this session |
 
 ## How to Communicate
 
@@ -51,7 +51,7 @@ unless necessary — they run on expensive frontier models.
 
 ## Skills
 
-Skills provide detailed instructions for specific tasks. Check `~/skills/`
+Skills provide detailed instructions for specific tasks. Check `~/workspace/skills/`
 for what is available in your current session. Skills are the source of
 truth for how-to instructions. If a skill exists for what you are doing,
 use it.

@@ -1,0 +1,49 @@
+# Default profile: full system administration
+# Safety comes from audit trails, contracts, and heartbeat — not restriction
+Cmnd_Alias CON_AGENT_OPS = \
+    /usr/bin/systemctl start con-*, \
+    /usr/bin/systemctl restart con-*, \
+    /usr/bin/systemctl stop con-*, \
+    /usr/bin/systemctl enable con-*, \
+    /usr/bin/systemctl enable --now con-*, \
+    /usr/bin/systemctl disable con-*, \
+    /usr/bin/systemctl daemon-reload, \
+    /usr/bin/tee /etc/systemd/system/con-*.service, \
+    /usr/bin/tee /etc/systemd/system/con-*.path, \
+    /usr/bin/tee /etc/systemd/system/con-*.timer
+
+Cmnd_Alias CON_PKG_OPS = \
+    /usr/bin/apt-get update, \
+    /usr/bin/apt-get install *, \
+    /usr/bin/apt-get remove *, \
+    /usr/bin/apt-get upgrade, \
+    /usr/bin/apt-get autoremove
+
+Cmnd_Alias CON_USER_OPS = \
+    /usr/sbin/useradd, \
+    /usr/sbin/usermod, \
+    /usr/sbin/groupadd, \
+    /usr/sbin/groupmod
+
+Cmnd_Alias CON_FILE_OPS = \
+    /usr/bin/install, \
+    /usr/bin/setfacl, \
+    /usr/bin/chown, \
+    /usr/bin/chmod, \
+    /usr/bin/mkdir, \
+    /usr/bin/tee
+
+Cmnd_Alias CON_SVC_OPS = \
+    /usr/bin/systemctl start *, \
+    /usr/bin/systemctl stop *, \
+    /usr/bin/systemctl restart *, \
+    /usr/bin/systemctl enable *, \
+    /usr/bin/systemctl disable *, \
+    /usr/bin/systemctl status *
+
+Cmnd_Alias CON_NET_OPS = \
+    /usr/sbin/ip, \
+    /usr/sbin/nft
+
+a-sysadmin ALL=(root) NOPASSWD: CON_AGENT_OPS, CON_PKG_OPS, CON_USER_OPS, \
+    CON_FILE_OPS, CON_SVC_OPS, CON_NET_OPS

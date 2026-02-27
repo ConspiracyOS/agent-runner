@@ -66,6 +66,19 @@ for agent_dir in "$AGENTS_BASE"/*/; do
     fi
 done
 
+# Check outer inbox watcher is enabled
+if ! systemctl is-enabled "con-outer-inbox.path" >/dev/null 2>&1; then
+    echo "ERROR: con-outer-inbox.path not enabled"
+    ERRORS=$((ERRORS + 1))
+fi
+
+# Check outer inbox permissions (must be world-writable + sticky)
+mode=$(stat -c '%a' /srv/con/inbox 2>/dev/null)
+if [ "$mode" != "1777" ]; then
+    echo "ERROR: /srv/con/inbox has mode $mode (expected 1777)"
+    ERRORS=$((ERRORS + 1))
+fi
+
 if [ "$ERRORS" -gt 0 ]; then
     echo "CON-AGENT-001: $ERRORS violation(s) found"
     exit 1

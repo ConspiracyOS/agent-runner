@@ -4,6 +4,9 @@
 [system]
 name = "my-conspiracy"
 
+[dashboard]
+enabled = false
+
 [defaults.operator]
 cli   = "picoclaw"
 model = "anthropic/claude-sonnet-4-6"

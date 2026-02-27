@@ -18,6 +18,10 @@ func PlanProvision(cfg *config.Config) []string {
 	cmds = append(cmds, "groupadd -f workers")
 	cmds = append(cmds, "groupadd -f trusted")
 
+	// Fix /etc/con/env ownership — con-env.service runs before bootstrap,
+	// so the agents group doesn't exist yet on first boot. Fix it now.
+	cmds = append(cmds, "chgrp agents /etc/con/env 2>/dev/null || true")
+
 	// Can-task groups (who can write to whose inbox)
 	for _, a := range cfg.Agents {
 		cmds = append(cmds, fmt.Sprintf("groupadd -f can-task-%s", a.Name))
@@ -58,8 +62,8 @@ func PlanProvision(cfg *config.Config) []string {
 	cmds = append(cmds, "install -d -m 755 /srv/con/contracts")
 	cmds = append(cmds, "install -d -m 755 /srv/con/logs")
 	cmds = append(cmds, "install -d -m 755 /srv/con/logs/audit")
+	cmds = append(cmds, "install -d -m 755 /srv/con/status")
 	cmds = append(cmds, "install -d -m 755 /srv/con/scopes")
-	cmds = append(cmds, "install -d -m 755 /srv/con/outer") // outer-bound requests from inner agents
 
 	// Per-agent dirs
 	for _, a := range cfg.Agents {
@@ -90,36 +94,24 @@ func PlanProvision(cfg *config.Config) []string {
 	cmds = append(cmds, "setfacl -m u:a-sysadmin:rwx /srv/con/contracts/")
 	cmds = append(cmds, "setfacl -m u:a-sysadmin:rwx /srv/con/logs/audit/")
 
-	// Outer dir: concierge and sysadmin can write requests for outer support
-	cmds = append(cmds, "setfacl -m u:a-concierge:rwx /srv/con/outer/")
-	cmds = append(cmds, "setfacl -m u:a-sysadmin:rwx /srv/con/outer/")
+	// 5. SSH authorized keys (for make apply, SSH access)
+	if len(cfg.Infra.SSHAuthorizedKeys) > 0 {
+		cmds = append(cmds, "install -d -m 700 /root/.ssh")
+		for _, key := range cfg.Infra.SSHAuthorizedKeys {
+			cmds = append(cmds, fmt.Sprintf(
+				`grep -qxF '%s' /root/.ssh/authorized_keys 2>/dev/null || echo '%s' >> /root/.ssh/authorized_keys`,
+				key, key,
+			))
+		}
+		cmds = append(cmds, "chmod 600 /root/.ssh/authorized_keys")
+	}
 
-	// 5. Sudoers for sysadmin
-	// Patterns must match commands in commission-agent.md skill exactly.
-	// Trailing * in sudoers matches all remaining arguments.
-	cmds = append(cmds, `cat > /etc/sudoers.d/con-sysadmin << 'SUDOERS'
-Cmnd_Alias CONSPIRACY_OPS = \
-    /usr/bin/systemctl start con-*, \
-    /usr/bin/systemctl stop con-*, \
-    /usr/bin/systemctl restart con-*, \
-    /usr/bin/systemctl enable con-*, \
-    /usr/bin/systemctl enable --now con-*, \
-    /usr/bin/systemctl daemon-reload, \
-    /usr/sbin/useradd, \
-    /usr/sbin/usermod, \
-    /usr/sbin/groupadd, \
-    /usr/bin/install -d /srv/con/agents/*, \
-    /usr/bin/install -d -o * -g agents -m * /srv/con/agents/*, \
-    /usr/bin/setfacl -m * /srv/con/agents/*, \
-    /usr/bin/chown * /srv/con/agents/*, \
-    /usr/bin/chown * /home/a-*, \
-    /usr/bin/chmod 700 /home/a-*, \
-    /usr/bin/tee /etc/systemd/system/con-*
+	// 6. Sudoers — install from profile (not hardcoded)
+	cmds = append(cmds, "cp /etc/con/sudoers.d/* /etc/sudoers.d/ 2>/dev/null || true")
+	cmds = append(cmds, "chmod 440 /etc/sudoers.d/con-* 2>/dev/null || true")
+	cmds = append(cmds, "visudo -c || echo 'warn: sudoers validation failed'")
 
-a-sysadmin ALL=(root) NOPASSWD: CONSPIRACY_OPS
-SUDOERS`)
-
-	// 6. Install system contracts from outer config
+	// 7. Install system contracts from outer config
 	cmds = append(cmds, "cp /etc/con/contracts/*.yaml /srv/con/contracts/ 2>/dev/null || true")
 	cmds = append(cmds, "cp -r /etc/con/contracts/scripts/ /srv/con/contracts/scripts/ 2>/dev/null || true")
 
@@ -151,6 +143,52 @@ EnvironmentFile=-/etc/con/env
 EOF`)
 
 	cmds = append(cmds, "systemctl enable --now con-outer-inbox.path")
+
+	// 9. Tailscale (if configured and TS_AUTHKEY available)
+	if cfg.Infra.TailscaleHostname != "" {
+		cmds = append(cmds, fmt.Sprintf(`if [ -n "$TS_AUTHKEY" ]; then
+    tailscaled --state=/var/lib/tailscale/tailscaled.state &
+    sleep 2
+    tailscale up --hostname=%s --authkey="$TS_AUTHKEY" --accept-routes
+    echo "tailscale: $(tailscale ip -4)"
+else
+    echo "warn: tailscale_hostname set but TS_AUTHKEY not found, skipping"
+fi`, cfg.Infra.TailscaleHostname))
+	}
+
+	// 10. Dashboard (nginx serving static status page)
+	if cfg.Dashboard.Enabled {
+		nginxConf := fmt.Sprintf(`server {
+    listen %s:%d;
+    root /srv/con/status;
+    index index.html;
+    autoindex off;
+
+    location / {
+        limit_except GET HEAD { deny all; }
+        try_files $uri $uri/ =404;
+    }
+}`, cfg.Dashboard.Bind, cfg.Dashboard.Port)
+		cmds = append(cmds, fmt.Sprintf("cat > /etc/nginx/sites-available/conspiracyos << 'EOF'\n%s\nEOF", nginxConf))
+		cmds = append(cmds, "ln -sf /etc/nginx/sites-available/conspiracyos /etc/nginx/sites-enabled/conspiracyos")
+
+		// If tailscale is active, override nginx to bind to tailscale IP on port 80
+		if cfg.Infra.TailscaleHostname != "" {
+			cmds = append(cmds, `TSIP=$(tailscale ip -4 2>/dev/null || true)
+if [ -n "$TSIP" ]; then
+    sed -i "s/listen .*/listen $TSIP:80;/" /etc/nginx/sites-enabled/conspiracyos
+fi`)
+		}
+
+		cmds = append(cmds, "systemctl enable --now nginx")
+
+		// Generate initial status page so it's available immediately
+		cmds = append(cmds, "/usr/local/bin/con-status-page")
+	} else {
+		// Dashboard disabled — ensure nginx is stopped
+		cmds = append(cmds, "systemctl disable --now nginx 2>/dev/null || true")
+		cmds = append(cmds, "rm -f /etc/nginx/sites-enabled/conspiracyos")
+	}
 
 	return cmds
 }

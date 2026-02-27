@@ -7,8 +7,10 @@ Prerequisites: you must have received a commissioning request that is within sta
 0. Pre-flight: verify you have the capabilities needed to commission:
    ```
    test -w /srv/con/contracts/ && echo "contracts: ok" || echo "contracts: FAIL"
-   sudo -n useradd --help >/dev/null 2>&1 && echo "useradd: ok" || echo "useradd: FAIL"
-   sudo -n install --help >/dev/null 2>&1 && echo "install: ok" || echo "install: FAIL"
+   sudo -n useradd -D >/dev/null 2>&1 && echo "useradd: ok" || echo "useradd: FAIL"
+   sudo -n install -d /srv/con/agents/.preflight-test >/dev/null 2>&1 \
+     && echo "install: ok" || echo "install: FAIL"
+   sudo rm -rf /srv/con/agents/.preflight-test 2>/dev/null
    ```
    If any pre-flight check fails, STOP and escalate — do not attempt partial commissioning.
 
@@ -90,12 +92,17 @@ Prerequisites: you must have received a commissioning request that is within sta
    (name, tier, mode, roles, instructions, etc.)
    ```
 
-9. Write the agent's AGENTS.md to their home directory:
+9. Assemble the agent's AGENTS.md:
    ```
-   Copy /etc/con/agents/<name>/AGENTS.md to /home/a-<name>/AGENTS.md
+   con bootstrap
    ```
-   If no agent-specific AGENTS.md exists in `/etc/con/agents/<name>/`, create a minimal one with the agent's name, role description, and basic rules. The runner reads this file on every invocation.
-   Set ownership: `sudo chown a-<name>:agents /home/a-<name>/AGENTS.md`
+   Bootstrap assembles AGENTS.md from multiple layers (base + groups + roles +
+   agent + inline instructions) and writes it to `/home/a-<name>/AGENTS.md` with
+   correct ownership. Do NOT manually copy a single AGENTS.md file — the assembled
+   file includes the base orientation, role layers, and inline config that a raw
+   copy would miss.
+
+   Verify: `ls -la /home/a-<name>/AGENTS.md` — should be owned by `a-<name>:agents`.
 
 10. Log the commissioning to the audit log at `/srv/con/logs/audit/`
 

@@ -17,6 +17,7 @@ After=network.target
 [Service]
 Type=oneshot
 ExecStart=/usr/local/bin/con healthcheck
+ExecStartPost=-/usr/local/bin/con-status-page
 `
 	units["con-healthcheck.service"] = svc
 

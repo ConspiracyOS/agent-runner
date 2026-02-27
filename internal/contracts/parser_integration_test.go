@@ -17,8 +17,8 @@ func TestLoadDir_SystemContracts(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(contracts) != 6 {
-		t.Errorf("LoadDir returned %d contracts, want 6", len(contracts))
+	if len(contracts) != 8 {
+		t.Errorf("LoadDir returned %d contracts, want 8", len(contracts))
 	}
 
 	// Verify all have IDs and are detective type

@@ -1,0 +1,14 @@
+id: CON-SYS-004b
+description: Sysadmin sessions must not exceed 30 minutes
+type: detective
+frequency: 60s
+scope: agent:sysadmin
+checks:
+  - name: session_duration
+    command:
+      run: "ps -eo user,etimes,args --no-headers | grep '^a-sysadmin ' | grep '[c]on run' | awk '{if ($2 > 1800) print $1}' | head -1"
+      test: "[ -z \"$RESULT\" ]"
+    on_fail:
+      action: kill_session
+      escalate: sysadmin
+      message: "CON-SYS-004b FAILED: sysadmin session exceeds 30 minutes"

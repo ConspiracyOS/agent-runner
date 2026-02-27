@@ -61,6 +61,12 @@ func applyDefaults(cfg *Config) {
 	if cfg.Contracts.System.HealthcheckInterval == "" {
 		cfg.Contracts.System.HealthcheckInterval = "60s"
 	}
+	if cfg.Dashboard.Port == 0 {
+		cfg.Dashboard.Port = 8080
+	}
+	if cfg.Dashboard.Bind == "" {
+		cfg.Dashboard.Bind = "0.0.0.0"
+	}
 }
 
 func validate(cfg *Config) error {

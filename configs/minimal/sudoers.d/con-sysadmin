@@ -1,0 +1,17 @@
+# Minimal profile: agent commissioning operations only
+Cmnd_Alias CONSPIRACY_OPS = \
+    /usr/bin/systemctl start con-*, \
+    /usr/bin/systemctl restart con-*, \
+    /usr/bin/systemctl enable con-*, \
+    /usr/bin/systemctl enable --now con-*, \
+    /usr/bin/systemctl daemon-reload, \
+    /usr/sbin/useradd, \
+    /usr/bin/install -d /srv/con/agents/*, \
+    /usr/bin/install -d -o a-* -g agents -m 700 /srv/con/agents/*, \
+    /usr/bin/setfacl -m u:a-*:* /srv/con/agents/*, \
+    /usr/bin/chown * /home/a-*, \
+    /usr/bin/chmod 700 /home/a-*, \
+    /usr/bin/tee /etc/systemd/system/con-*.service, \
+    /usr/bin/tee /etc/systemd/system/con-*.path
+
+a-sysadmin ALL=(root) NOPASSWD: CONSPIRACY_OPS

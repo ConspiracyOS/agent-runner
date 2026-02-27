@@ -14,8 +14,10 @@ RUN apt-get update && apt-get install -y \
     systemd systemd-sysv \
     openssh-server sudo git tmux curl jq \
     nftables acl unzip tree cron ca-certificates \
-    auditd \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
+    auditd nginx \
+    && apt-get clean && rm -rf /var/lib/apt/lists/* \
+    && rm -f /etc/nginx/sites-enabled/default \
+    && systemctl disable nginx
 
 # Install Tailscale
 RUN curl -fsSL https://tailscale.com/install.sh | sh
@@ -25,9 +27,12 @@ RUN curl -fsSL https://tailscale.com/install.sh | sh
 COPY con /usr/local/bin/con
 RUN chmod +x /usr/local/bin/con
 
-# Copy config profile (default: "default"; override with --build-arg CON_PROFILE=minimal)
-ARG CON_PROFILE=default
-COPY configs/${CON_PROFILE}/ /etc/con/
+# Factory default: minimal profile (apply other profiles at runtime via `make apply`)
+COPY configs/minimal/ /etc/con/
+
+# Status page generator (runs after each healthcheck)
+COPY scripts/con-status-page.sh /usr/local/bin/con-status-page
+RUN chmod +x /usr/local/bin/con-status-page
 
 # Bootstrap entrypoint (runs as systemd oneshot after boot)
 COPY scripts/con-bootstrap-entry.sh /usr/local/bin/con-bootstrap-entry
@@ -42,7 +47,7 @@ RUN chmod +x /usr/local/bin/con-export-env && \
     systemctl enable con-env.service
 
 # Create the bootstrap systemd unit
-RUN printf '[Unit]\nDescription=ConspiracyOS Bootstrap\nAfter=network.target con-env.service\nConditionPathExists=!/srv/con/.bootstrapped\n\n[Service]\nType=oneshot\nExecStart=/usr/local/bin/con-bootstrap-entry\nRemainAfterExit=yes\n\n[Install]\nWantedBy=multi-user.target\n' \
+RUN printf '[Unit]\nDescription=ConspiracyOS Bootstrap\nAfter=network.target con-env.service\nConditionPathExists=!/srv/con/.bootstrapped\n\n[Service]\nType=oneshot\nExecStart=/usr/local/bin/con-bootstrap-entry\nEnvironmentFile=-/etc/con/env\nRemainAfterExit=yes\n\n[Install]\nWantedBy=multi-user.target\n' \
     > /etc/systemd/system/con-bootstrap.service && \
     systemctl enable con-bootstrap.service
 

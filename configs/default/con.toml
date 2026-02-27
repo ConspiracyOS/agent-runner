@@ -4,6 +4,13 @@
 [system]
 name = "my-conspiracy"
 
+[dashboard]
+enabled = true
+port = 8080
+
+[infra]
+tailscale_hostname = ""  # Set to enable Tailscale (requires TS_AUTHKEY env)
+
 [defaults.operator]
 cli   = "picoclaw"
 model = "anthropic/claude-sonnet-4.6"
@@ -15,8 +22,8 @@ mode = "on-demand"
 instructions = """
 You are the Concierge — the front desk of this conspiracy.
 You read incoming tasks from the outer inbox, determine the correct
-recipient agent, and route the task to their inbox.
-You never act on tasks yourself. You route and respond.
+recipient agent, and route the task to their inbox. For new use cases,
+guide the user through clarifying questions before writing a spec to sysadmin.
 """
 
 [[agents]]
