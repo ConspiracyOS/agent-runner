@@ -80,6 +80,53 @@ echo "--- 7. Audit trail ---"
 check "audit log has entries" test -s "/srv/con/logs/audit/$(date +%Y-%m-%d).log"
 
 echo ""
+echo "--- 8. Git snapshot ---"
+check "/srv/con is a git repo" test -d /srv/con/.git
+check "git has initial commit" git -C /srv/con log --oneline -1
+check "git identity configured" git -C /srv/con config user.name
+check ".gitignore excludes workspaces" grep -q "agents/\*/workspace/" /srv/con/.gitignore
+
+echo ""
+echo "--- 9. Systemd hardening ---"
+# Workers should have NoNewPrivileges (sysadmin should NOT)
+for agent_dir in /srv/con/agents/*/; do
+    agent=$(basename "$agent_dir")
+    unit_file="/etc/systemd/system/con-${agent}.service"
+    [ -f "$unit_file" ] || continue
+    case "$agent" in
+        sysadmin)
+            check "sysadmin lacks NoNewPrivileges" \
+                sh -c "! grep -q 'NoNewPrivileges=yes' $unit_file"
+            ;;
+        *)
+            if grep -q 'NoNewPrivileges' "$unit_file"; then
+                check "$agent has NoNewPrivileges" \
+                    grep -q 'NoNewPrivileges=yes' "$unit_file"
+            fi
+            ;;
+    esac
+done
+check "worker units have ProtectHome" \
+    grep -q 'ProtectHome=tmpfs' /etc/systemd/system/con-concierge.service
+
+echo ""
+echo "--- 10. Contract timer ---"
+check "healthcheck timer active" systemctl is-active con-healthcheck.timer
+check "contracts log exists" test -f /srv/con/logs/audit/contracts.log
+
+echo ""
+echo "--- 11. Skill injection ---"
+for agent_dir in /srv/con/agents/*/; do
+    agent=$(basename "$agent_dir")
+    skills_dir="${agent_dir}workspace/skills"
+    [ -d "$skills_dir" ] || continue
+    md_count=$(ls "$skills_dir"/*.md 2>/dev/null | wc -l)
+    if [ "$md_count" -gt 0 ]; then
+        check "$agent has skills deployed" test "$md_count" -gt 0
+    fi
+done
+
+echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ $FAIL -eq 0 ] && echo "ALL TESTS PASSED" || echo "SOME TESTS FAILED"
 exit $FAIL

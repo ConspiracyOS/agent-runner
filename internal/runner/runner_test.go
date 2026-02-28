@@ -178,6 +178,168 @@ func TestIsTrustedUID_NonRoot(t *testing.T) {
 	}
 }
 
+func TestPickOldestTaskOrder(t *testing.T) {
+	inbox := t.TempDir()
+
+	os.WriteFile(filepath.Join(inbox, "003.task"), []byte("third"), 0644)
+	os.WriteFile(filepath.Join(inbox, "001.task"), []byte("first"), 0644)
+	os.WriteFile(filepath.Join(inbox, "002.task"), []byte("second"), 0644)
+
+	task, err := PickOldestTask(inbox)
+	if err != nil {
+		t.Fatalf("PickOldestTask failed: %v", err)
+	}
+	if filepath.Base(task.Path) != "001.task" {
+		t.Errorf("expected 001.task to be picked first, got %s", filepath.Base(task.Path))
+	}
+	if task.Content != "first" {
+		t.Errorf("expected content %q, got %q", "first", task.Content)
+	}
+}
+
+func TestPickOldestTaskOversize(t *testing.T) {
+	inbox := t.TempDir()
+
+	// Create a task file larger than 32KB
+	bigContent := strings.Repeat("x", 33*1024)
+	taskPath := filepath.Join(inbox, "001-big.task")
+	os.WriteFile(taskPath, []byte(bigContent), 0644)
+
+	task, err := PickOldestTask(inbox)
+	if err != nil {
+		t.Fatalf("PickOldestTask failed: %v", err)
+	}
+	if !strings.HasPrefix(task.Content, "[Attachment: file too large") {
+		t.Errorf("expected attachment reference for oversized task, got: %q", task.Content[:80])
+	}
+	if !strings.Contains(task.Content, taskPath) {
+		t.Errorf("attachment reference should include task path, got: %q", task.Content)
+	}
+}
+
+func TestRouteOutputTimestamp(t *testing.T) {
+	agentDir := t.TempDir()
+	outbox := filepath.Join(agentDir, "outbox")
+	processed := filepath.Join(agentDir, "processed")
+	os.MkdirAll(outbox, 0755)
+	os.MkdirAll(processed, 0755)
+
+	inbox := filepath.Join(agentDir, "inbox")
+	os.MkdirAll(inbox, 0755)
+	taskPath := filepath.Join(inbox, "007-mytask.task")
+	os.WriteFile(taskPath, []byte("task body"), 0644)
+
+	task := Task{Path: taskPath, Content: "task body"}
+	if err := RouteOutput(task, "done", outbox, processed); err != nil {
+		t.Fatalf("RouteOutput failed: %v", err)
+	}
+
+	files, _ := os.ReadDir(outbox)
+	if len(files) != 1 {
+		t.Fatalf("expected 1 file in outbox, got %d", len(files))
+	}
+	name := files[0].Name()
+	// Name format: <timestamp>-<taskbase>.response  e.g. 20260228-153000-007-mytask.response
+	if !strings.HasSuffix(name, "-007-mytask.response") {
+		t.Errorf("output filename should end with task basename (without .task): got %q", name)
+	}
+	// Timestamp prefix: 8 digits + '-' + 6 digits
+	if len(name) < 16 || name[8] != '-' {
+		t.Errorf("output filename should start with YYYYMMDD-HHMMSS timestamp: got %q", name)
+	}
+}
+
+func TestRouteOutputMissingTask(t *testing.T) {
+	agentDir := t.TempDir()
+	outbox := filepath.Join(agentDir, "outbox")
+	processed := filepath.Join(agentDir, "processed")
+	os.MkdirAll(outbox, 0755)
+	os.MkdirAll(processed, 0755)
+
+	// task.Path does not exist — rename will get ENOENT, which should be tolerated
+	task := Task{
+		Path:    filepath.Join(agentDir, "inbox", "ghost.task"),
+		Content: "never existed",
+	}
+	if err := RouteOutput(task, "output", outbox, processed); err != nil {
+		t.Errorf("RouteOutput should tolerate missing task file (ENOENT), got: %v", err)
+	}
+}
+
+func TestMoveOuterInboxCrossDevice(t *testing.T) {
+	outerInbox := t.TempDir()
+	conciergeInbox := t.TempDir()
+
+	// Write multiple tasks and a non-task file
+	os.WriteFile(filepath.Join(outerInbox, "002.task"), []byte("b"), 0644)
+	os.WriteFile(filepath.Join(outerInbox, "001.task"), []byte("a"), 0644)
+	os.WriteFile(filepath.Join(outerInbox, "readme.txt"), []byte("ignore me"), 0644)
+
+	if err := moveOuterInboxTasksTo(outerInbox, conciergeInbox); err != nil {
+		t.Fatalf("moveOuterInboxTasksTo failed: %v", err)
+	}
+
+	// Both task files should appear in concierge inbox
+	for _, name := range []string{"001.task", "002.task"} {
+		if _, err := os.Stat(filepath.Join(conciergeInbox, name)); os.IsNotExist(err) {
+			t.Errorf("expected %s in concierge inbox", name)
+		}
+		if _, err := os.Stat(filepath.Join(outerInbox, name)); !os.IsNotExist(err) {
+			t.Errorf("expected %s to be removed from outer inbox", name)
+		}
+	}
+
+	// Non-task file should remain untouched in outer inbox
+	if _, err := os.Stat(filepath.Join(outerInbox, "readme.txt")); os.IsNotExist(err) {
+		t.Error("expected readme.txt to remain in outer inbox")
+	}
+}
+
+func TestReadSkills(t *testing.T) {
+	skillsDir := t.TempDir()
+
+	os.WriteFile(filepath.Join(skillsDir, "alpha.md"), []byte("alpha content"), 0644)
+	os.WriteFile(filepath.Join(skillsDir, "beta.md"), []byte("beta content"), 0644)
+	os.WriteFile(filepath.Join(skillsDir, "notes.txt"), []byte("should be ignored"), 0644)
+	os.MkdirAll(filepath.Join(skillsDir, "subdir"), 0755)
+	os.WriteFile(filepath.Join(skillsDir, "subdir", "nested.md"), []byte("should be ignored"), 0644)
+
+	result := ReadSkills(skillsDir)
+
+	if !strings.Contains(result, "## Skill: alpha") {
+		t.Error("expected alpha skill section in output")
+	}
+	if !strings.Contains(result, "alpha content") {
+		t.Error("expected alpha skill content in output")
+	}
+	if !strings.Contains(result, "## Skill: beta") {
+		t.Error("expected beta skill section in output")
+	}
+	if !strings.Contains(result, "beta content") {
+		t.Error("expected beta skill content in output")
+	}
+	if strings.Contains(result, "should be ignored") {
+		t.Error("non-.md files and subdirectory files should not appear in skill output")
+	}
+}
+
+func TestReadSkillsEmpty(t *testing.T) {
+	// Directory exists but has no .md files
+	skillsDir := t.TempDir()
+	os.WriteFile(filepath.Join(skillsDir, "notes.txt"), []byte("not a skill"), 0644)
+
+	if result := ReadSkills(skillsDir); result != "" {
+		t.Errorf("expected empty string for dir with no .md files, got: %q", result)
+	}
+}
+
+func TestReadSkillsMissingDir(t *testing.T) {
+	result := ReadSkills("/nonexistent/path/to/skills")
+	if result != "" {
+		t.Errorf("expected empty string for missing dir, got: %q", result)
+	}
+}
+
 func TestIsTrustedUID_WithGroupOverride(t *testing.T) {
 	uid := uint32(os.Getuid())
 	if uid == 0 {

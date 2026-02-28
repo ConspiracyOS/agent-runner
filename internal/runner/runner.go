@@ -168,6 +168,26 @@ func AssembleAgentsMD(agent config.AgentConfig) error {
 	return os.WriteFile(filepath.Join(homeDir, "AGENTS.md"), []byte(agentsMD), 0644)
 }
 
+// ReadSkills reads all .md files from skillsDir and returns concatenated skill content.
+// Returns an empty string if the directory does not exist or contains no .md files.
+func ReadSkills(skillsDir string) string {
+	var skillsContent string
+	entries, err := os.ReadDir(skillsDir)
+	if err != nil {
+		return ""
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(skillsDir, e.Name()))
+		if err == nil {
+			skillsContent += fmt.Sprintf("\n\n## Skill: %s\n\n%s", strings.TrimSuffix(e.Name(), ".md"), string(data))
+		}
+	}
+	return skillsContent
+}
+
 // Run executes a single agent run: assemble context, pick task, invoke PicoClaw, route output.
 func Run(agentName string, cfg *config.Config) error {
 	agent := cfg.ResolvedAgent(agentName)
@@ -196,19 +216,8 @@ func Run(agentName string, cfg *config.Config) error {
 	}
 
 	// 3. Build the prompt: AGENTS.md + skills + task content
-	var skillsContent string
 	skillsDir := filepath.Join(agentDir, "workspace", "skills")
-	if entries, err := os.ReadDir(skillsDir); err == nil {
-		for _, e := range entries {
-			if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
-				continue
-			}
-			data, err := os.ReadFile(filepath.Join(skillsDir, e.Name()))
-			if err == nil {
-				skillsContent += fmt.Sprintf("\n\n## Skill: %s\n\n%s", strings.TrimSuffix(e.Name(), ".md"), string(data))
-			}
-		}
-	}
+	skillsContent := ReadSkills(skillsDir)
 
 	prompt := fmt.Sprintf("Context (your instructions):\n\n%s", agentsMD)
 	if skillsContent != "" {

@@ -1,4 +1,4 @@
-.PHONY: build test clean linux linux-arm64 image run stop task deploy apply status reset discord tui web
+.PHONY: build test test-smoke test-e2e test-all clean linux linux-arm64 image run stop task deploy apply status reset discord tui web
 
 # Container instance name — override for production: make deploy NAME=cos
 NAME ?= conspiracyos
@@ -89,9 +89,23 @@ tui:
 web:
 	go build -o con-web ./clients/web/
 
-# Run all tests
+# Run Go unit tests (fast, host-side)
 test:
 	go test ./... -v
+
+# Run smoke tests inside the container
+test-smoke:
+	container exec $(NAME) bash /test/smoke/smoke_test.sh
+
+# Run e2e tests inside the container (slow, needs LLM API key)
+test-e2e:
+	@for f in test/e2e/[0-9]*.sh; do \
+		echo ""; echo ">>> $$f"; \
+		container exec $(NAME) bash /$$f || true; \
+	done
+
+# Run unit + smoke (no LLM needed)
+test-all: test test-smoke
 
 # Clean
 clean:
