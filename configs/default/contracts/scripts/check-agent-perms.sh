@@ -72,10 +72,15 @@ if ! systemctl is-enabled "con-outer-inbox.path" >/dev/null 2>&1; then
     ERRORS=$((ERRORS + 1))
 fi
 
-# Check outer inbox permissions (must be world-writable + sticky)
+# Check outer inbox permissions (root:agents, 0770 — no sticky bit)
 mode=$(stat -c '%a' /srv/con/inbox 2>/dev/null)
-if [ "$mode" != "1777" ]; then
-    echo "ERROR: /srv/con/inbox has mode $mode (expected 1777)"
+owner_group=$(stat -c '%U:%G' /srv/con/inbox 2>/dev/null)
+if [ "$mode" != "770" ]; then
+    echo "ERROR: /srv/con/inbox has mode $mode (expected 770)"
+    ERRORS=$((ERRORS + 1))
+fi
+if [ "$owner_group" != "root:agents" ]; then
+    echo "ERROR: /srv/con/inbox owned by $owner_group (expected root:agents)"
     ERRORS=$((ERRORS + 1))
 fi
 

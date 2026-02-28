@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -13,6 +14,38 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 )
+
+// typing tracks channels where we're showing the typing indicator.
+var typing sync.Map // channelID → context.CancelFunc
+
+// startTyping begins showing "typing..." on a channel. Repeats every 8s until stopTyping is called.
+func startTyping(s *discordgo.Session, channelID string) {
+	// Cancel any existing typing on this channel
+	if prev, ok := typing.LoadAndDelete(channelID); ok {
+		prev.(context.CancelFunc)()
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	typing.Store(channelID, cancel)
+	go func() {
+		for {
+			s.ChannelTyping(channelID)
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(8 * time.Second):
+			}
+		}
+	}()
+}
+
+// stopTyping cancels the typing indicator on a channel.
+func stopTyping(channelID string) {
+	if cancel, ok := typing.LoadAndDelete(channelID); ok {
+		cancel.(context.CancelFunc)()
+	}
+}
+
+var startTime = time.Now()
 
 // Config holds the driver configuration loaded from environment variables.
 type Config struct {
@@ -85,6 +118,12 @@ func (rt *responseTracker) isNew(path string) bool {
 	return true
 }
 
+func (rt *responseTracker) count() int {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	return len(rt.seen)
+}
+
 // dmChannels tracks active DM channel IDs for response delivery.
 type dmChannels struct {
 	mu       sync.Mutex
@@ -109,6 +148,56 @@ func (d *dmChannels) list() []string {
 		out = append(out, id)
 	}
 	return out
+}
+
+func (d *dmChannels) count() int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return len(d.channels)
+}
+
+// Slash command definitions
+var slashCommands = []*discordgo.ApplicationCommand{
+	{
+		Name:        "status",
+		Description: "Show agent status",
+	},
+	{
+		Name:        "clear",
+		Description: "Reset the concierge conversation history",
+	},
+	{
+		Name:        "logs",
+		Description: "Show recent audit log entries",
+		Options: []*discordgo.ApplicationCommandOption{
+			{
+				Type:        discordgo.ApplicationCommandOptionInteger,
+				Name:        "count",
+				Description: "Number of lines (default: 20)",
+				Required:    false,
+			},
+		},
+	},
+	{
+		Name:        "responses",
+		Description: "Show latest response from each agent",
+	},
+	{
+		Name:        "history",
+		Description: "Show recent agent responses chronologically",
+		Options: []*discordgo.ApplicationCommandOption{
+			{
+				Type:        discordgo.ApplicationCommandOptionInteger,
+				Name:        "count",
+				Description: "Number of responses (default: 5)",
+				Required:    false,
+			},
+		},
+	},
+	{
+		Name:        "debug",
+		Description: "Show driver diagnostics",
+	},
 }
 
 func main() {
@@ -180,13 +269,55 @@ func main() {
 		}
 
 		s.MessageReactionAdd(m.ChannelID, m.ID, "\u2705") // check mark
+		startTyping(s, m.ChannelID)
 		log.Printf("task from %s: %s", m.Author.Username, truncate(message, 80))
+	})
+
+	// Interaction handler: slash commands
+	dg.AddHandler(func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+		if i.Type != discordgo.InteractionApplicationCommand {
+			return
+		}
+
+		// Track DM channel from interactions too
+		if cfg.ChannelID == "" && i.User != nil {
+			ch, err := s.UserChannelCreate(i.User.ID)
+			if err == nil {
+				dms.add(ch.ID)
+			}
+		}
+
+		data := i.ApplicationCommandData()
+		switch data.Name {
+		case "status":
+			handleStatus(s, i, cfg)
+		case "clear":
+			handleClear(s, i, cfg)
+		case "logs":
+			handleLogs(s, i, cfg, data.Options)
+		case "responses":
+			handleResponses(s, i, cfg)
+		case "history":
+			handleHistory(s, i, cfg, data.Options)
+		case "debug":
+			handleDebug(s, i, cfg, tracker, dms)
+		}
 	})
 
 	if err := dg.Open(); err != nil {
 		log.Fatalf("opening Discord connection: %v", err)
 	}
 	defer dg.Close()
+
+	// Register slash commands
+	for _, cmd := range slashCommands {
+		_, err := dg.ApplicationCommandCreate(dg.State.User.ID, "", cmd)
+		if err != nil {
+			log.Printf("registering /%s: %v", cmd.Name, err)
+		} else {
+			log.Printf("registered /%s", cmd.Name)
+		}
+	}
 
 	mode := "DM"
 	if cfg.ChannelID != "" {
@@ -205,6 +336,158 @@ func main() {
 	log.Println("shutting down")
 }
 
+// --- Slash command handlers ---
+
+func respond(s *discordgo.Session, i *discordgo.InteractionCreate, content string) {
+	chunks := splitMessage(content, 2000)
+	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content: chunks[0],
+		},
+	})
+	// Send overflow as follow-up messages
+	for _, chunk := range chunks[1:] {
+		s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+			Content: chunk,
+		})
+	}
+}
+
+func handleStatus(s *discordgo.Session, i *discordgo.InteractionCreate, cfg Config) {
+	out, err := sshRun(cfg, "con status")
+	if err != nil {
+		respond(s, i, fmt.Sprintf("SSH failed: %v\n%s", err, out))
+		return
+	}
+	respond(s, i, fmt.Sprintf("```\n%s\n```", out))
+}
+
+func handleClear(s *discordgo.Session, i *discordgo.InteractionCreate, cfg Config) {
+	out, err := sshRun(cfg, "rm -f /srv/con/agents/concierge/workspace/sessions/*.json")
+	if err != nil {
+		respond(s, i, fmt.Sprintf("Failed to clear session: %v\n%s", err, out))
+		return
+	}
+	respond(s, i, "Concierge session cleared.")
+	log.Printf("session cleared by %s", interactionUser(i))
+}
+
+func handleLogs(s *discordgo.Session, i *discordgo.InteractionCreate, cfg Config, opts []*discordgo.ApplicationCommandInteractionDataOption) {
+	count := 20
+	for _, opt := range opts {
+		if opt.Name == "count" {
+			count = int(opt.IntValue())
+		}
+	}
+	if count < 1 {
+		count = 1
+	}
+	if count > 100 {
+		count = 100
+	}
+
+	cmd := fmt.Sprintf("tail -n %d /srv/con/logs/audit/*.log 2>/dev/null", count)
+	out, err := sshRun(cfg, cmd)
+	if err != nil || out == "" {
+		respond(s, i, "No audit log entries found.")
+		return
+	}
+	respond(s, i, fmt.Sprintf("```\n%s\n```", out))
+}
+
+func handleResponses(s *discordgo.Session, i *discordgo.InteractionCreate, cfg Config) {
+	out, err := sshRun(cfg, "con responses")
+	if err != nil {
+		respond(s, i, fmt.Sprintf("SSH failed: %v\n%s", err, out))
+		return
+	}
+	if out == "" {
+		respond(s, i, "No responses found.")
+		return
+	}
+	respond(s, i, out)
+}
+
+func handleHistory(s *discordgo.Session, i *discordgo.InteractionCreate, cfg Config, opts []*discordgo.ApplicationCommandInteractionDataOption) {
+	count := 5
+	for _, opt := range opts {
+		if opt.Name == "count" {
+			count = int(opt.IntValue())
+		}
+	}
+	if count < 1 {
+		count = 1
+	}
+	if count > 20 {
+		count = 20
+	}
+
+	cmd := fmt.Sprintf(
+		`ls -t /srv/con/agents/*/outbox/*.response 2>/dev/null | head -%d | while read f; do agent=$(echo "$f" | awk -F/ '{print $5}'); echo "**${agent}** ($(basename "$f"))"; cat "$f"; echo; echo "---"; done`,
+		count,
+	)
+	out, err := sshRun(cfg, cmd)
+	if err != nil || out == "" {
+		respond(s, i, "No response history found.")
+		return
+	}
+	respond(s, i, out)
+}
+
+func handleDebug(s *discordgo.Session, i *discordgo.InteractionCreate, cfg Config, tracker *responseTracker, dms *dmChannels) {
+	mode := "DM"
+	if cfg.ChannelID != "" {
+		mode = fmt.Sprintf("channel %s", cfg.ChannelID)
+	}
+
+	uptime := time.Since(startTime).Truncate(time.Second)
+
+	// Test SSH connectivity
+	sshStatus := "connected"
+	statusOut, err := sshRun(cfg, "con status")
+	if err != nil {
+		sshStatus = fmt.Sprintf("FAILED: %v", err)
+		statusOut = ""
+	}
+
+	// Count pending tasks
+	pending := ""
+	if statusOut != "" {
+		pending = statusOut
+	}
+
+	lines := []string{
+		"```",
+		fmt.Sprintf("Mode:       %s", mode),
+		fmt.Sprintf("Target:     %s@%s:%s", cfg.SSHUser, cfg.SSHHost, cfg.SSHPort),
+		fmt.Sprintf("SSH:        %s", sshStatus),
+		fmt.Sprintf("Uptime:     %s", uptime),
+		fmt.Sprintf("Seen:       %d responses tracked", tracker.count()),
+		fmt.Sprintf("DM chans:   %d active", dms.count()),
+	}
+	if pending != "" {
+		lines = append(lines, "")
+		lines = append(lines, pending)
+	}
+	lines = append(lines, "```")
+
+	respond(s, i, strings.Join(lines, "\n"))
+}
+
+// interactionUser returns the username from an interaction (works in both DM and guild).
+func interactionUser(i *discordgo.InteractionCreate) string {
+	if i.User != nil {
+		return i.User.Username
+	}
+	if i.Member != nil && i.Member.User != nil {
+		return i.Member.User.Username
+	}
+	return "unknown"
+}
+
+// --- Response polling ---
+
 // seedResponses marks all existing response files as seen so we don't replay history.
 func seedResponses(cfg Config, tracker *responseTracker) {
 	out, err := sshRun(cfg, "ls /srv/con/agents/*/outbox/*.response 2>/dev/null")
@@ -217,7 +500,7 @@ func seedResponses(cfg Config, tracker *responseTracker) {
 			tracker.isNew(path) // marks as seen
 		}
 	}
-	log.Printf("seeded %d existing responses", len(tracker.seen))
+	log.Printf("seeded %d existing responses", tracker.count())
 }
 
 // pollResponses checks for new response files and posts them to Discord.
@@ -262,6 +545,7 @@ func sendResponse(dg *discordgo.Session, cfg Config, dms *dmChannels, content st
 
 	if cfg.ChannelID != "" {
 		// Channel mode: post to configured channel
+		stopTyping(cfg.ChannelID)
 		for _, chunk := range chunks {
 			dg.ChannelMessageSend(cfg.ChannelID, chunk)
 		}
@@ -270,11 +554,14 @@ func sendResponse(dg *discordgo.Session, cfg Config, dms *dmChannels, content st
 
 	// DM mode: post to all active DM channels
 	for _, chID := range dms.list() {
+		stopTyping(chID)
 		for _, chunk := range chunks {
 			dg.ChannelMessageSend(chID, chunk)
 		}
 	}
 }
+
+// --- Helpers ---
 
 // splitMessage splits content into chunks that fit Discord's 2000 char limit.
 func splitMessage(content string, limit int) []string {

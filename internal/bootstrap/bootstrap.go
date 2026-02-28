@@ -56,7 +56,7 @@ func PlanProvision(cfg *config.Config) []string {
 
 	// /srv/con/
 	cmds = append(cmds, "install -d -m 755 /srv/con")
-	cmds = append(cmds, "install -d -m 1777 /srv/con/inbox")  // sticky, world-writable
+	cmds = append(cmds, "install -d -o root -g agents -m 0770 /srv/con/inbox")  // root writes, agents group routes
 	cmds = append(cmds, "install -d -m 775 /srv/con/artifacts")
 	cmds = append(cmds, "install -d -m 755 /srv/con/config")
 	cmds = append(cmds, "install -d -m 755 /srv/con/config/agents")

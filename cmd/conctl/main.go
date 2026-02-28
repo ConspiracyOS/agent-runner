@@ -244,9 +244,15 @@ func runHealthcheck() {
 
 func runAgent(name string) {
 	cfg := loadConfig()
-	if err := runner.Run(name, cfg); err != nil {
-		fmt.Fprintf(os.Stderr, "run failed: %v\n", err)
-		os.Exit(1)
+	// Process all pending tasks before exiting (path watcher triggers once per batch)
+	for {
+		if err := runner.Run(name, cfg); err != nil {
+			if strings.Contains(err.Error(), "no tasks in inbox") {
+				return // Inbox drained
+			}
+			fmt.Fprintf(os.Stderr, "run failed: %v\n", err)
+			os.Exit(1)
+		}
 	}
 }
 

@@ -23,9 +23,9 @@ linux-arm64:
 image: linux-arm64
 	container build --dns 8.8.8.8 -t conspiracyos -f Containerfile .
 
-# Run the conspiracy (reads .env for secrets, detached)
+# Run the conspiracy (reads container env for secrets, detached)
 run:
-	container run -d --name $(NAME) --env-file .env conspiracyos
+	container run -d --name $(NAME) --env-file srv/dev/container.env conspiracyos
 
 # Stop the conspiracy
 stop:
@@ -42,12 +42,12 @@ task:
 # Deploy: rebuild image and restart container (boots with minimal profile)
 deploy: image
 	-container kill $(NAME) 2>/dev/null; container rm $(NAME) 2>/dev/null
-	container run -d --name $(NAME) --env-file .env conspiracyos
+	container run -d --name $(NAME) --env-file srv/dev/container.env conspiracyos
 
 # Apply a config profile to a running instance
 # Resolves container IP and uses SSH tar pipe for file transfer
 # (Apple Container CLI doesn't support stdin piping for container exec)
-# Requires: CON_SSH_AUTHORIZED_KEYS in .env or ssh-copy-id to container
+# Requires: CON_SSH_AUTHORIZED_KEYS in srv/dev/container.env or ssh-copy-id to container
 # Usage: make apply PROFILE=default
 apply:
 	@if [ -z "$(PROFILE)" ]; then echo "Usage: make apply PROFILE=<name>"; exit 1; fi

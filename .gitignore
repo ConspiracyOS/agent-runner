@@ -7,4 +7,4 @@ tmp/
 .env
 drivers/*/.env
 .playwright-mcp/
-os/
+srv/
