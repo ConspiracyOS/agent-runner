@@ -59,9 +59,11 @@ for agent_dir in "$AGENTS_BASE"/*/; do
         ERRORS=$((ERRORS + 1))
     fi
 
-    # Check path watcher is enabled
-    if ! systemctl is-enabled "con-${name}.path" >/dev/null 2>&1; then
-        echo "ERROR: con-${name}.path not enabled"
+    # Check agent trigger is enabled (path watcher, timer, or service)
+    if ! systemctl is-enabled "con-${name}.path" >/dev/null 2>&1 &&
+       ! systemctl is-enabled "con-${name}.timer" >/dev/null 2>&1 &&
+       ! systemctl is-enabled "con-${name}.service" >/dev/null 2>&1; then
+        echo "ERROR: con-${name} has no enabled trigger (.path, .timer, or .service)"
         ERRORS=$((ERRORS + 1))
     fi
 done
