@@ -1,6 +1,7 @@
 tmp/
 /con
 /con-discord
+/con-tui
 /conctl
 /discord
 *.exe

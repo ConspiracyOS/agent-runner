@@ -118,8 +118,11 @@ func PlanProvision(cfg *config.Config) []string {
 	cmds = append(cmds, "cp /etc/con/contracts/*.yaml /srv/con/contracts/ 2>/dev/null || true")
 	cmds = append(cmds, "cp -r /etc/con/contracts/scripts/ /srv/con/contracts/scripts/ 2>/dev/null || true")
 
-	// 7. Initialize /srv/con/ as git repo
-	cmds = append(cmds, "cd /srv/con && git init && git add -A && git commit -m 'initial state' --allow-empty || true")
+	// 7. Initialize /srv/con/ as git repo with .gitignore for workspace dirs
+	cmds = append(cmds, `cd /srv/con && git init && git config user.name 'con' && git config user.email 'con@localhost' && cat > .gitignore << 'GITIGNORE'
+agents/*/workspace/
+GITIGNORE
+git add -A && git commit -m 'initial state' --allow-empty || true`)
 
 	// 8. Outer inbox watcher — triggers concierge when files land in /srv/con/inbox
 	cmds = append(cmds, `cat > /etc/systemd/system/con-outer-inbox.path << 'EOF'

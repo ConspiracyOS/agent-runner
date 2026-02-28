@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/user"
 	"path/filepath"
 	"sort"
@@ -248,6 +249,11 @@ func Run(agentName string, cfg *config.Config) error {
 	if err := RouteOutput(task, output, outboxDir, processedDir); err != nil {
 		return fmt.Errorf("routing output: %w", err)
 	}
+
+	// 8. Snapshot /srv/con/ state (best-effort, non-blocking)
+	commitMsg := fmt.Sprintf("%s: %s [%s]", agentName, filepath.Base(task.Path), task.Trust)
+	exec.Command("git", "-C", "/srv/con", "add", "-A").Run()
+	exec.Command("git", "-C", "/srv/con", "commit", "-m", commitMsg, "--allow-empty").Run()
 
 	return nil
 }

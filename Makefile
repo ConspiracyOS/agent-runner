@@ -1,4 +1,4 @@
-.PHONY: build test clean linux linux-arm64 image run stop task deploy apply status reset discord
+.PHONY: build test clean linux linux-arm64 image run stop task deploy apply status reset discord tui
 
 # Container instance name — override for production: make deploy NAME=cos
 NAME ?= conspiracyos
@@ -80,6 +80,10 @@ reset:
 # Build Discord driver (runs on host, not in container)
 discord:
 	go build -o con-discord ./drivers/discord/
+
+# Build TUI client (runs on host, not in container)
+tui:
+	go build -o con-tui ./clients/tui/
 
 # Run all tests
 test:
