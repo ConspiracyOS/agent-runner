@@ -105,11 +105,26 @@ func TestGenerateCronUnits(t *testing.T) {
 
 	units := GenerateUnits(agent)
 
+	// Should produce a .timer unit
 	timerUnit, ok := units["con-reporter.timer"]
 	if !ok {
 		t.Fatal("expected con-reporter.timer unit")
 	}
 	if !strings.Contains(timerUnit, "OnCalendar=*-*-* 09:00:00") {
 		t.Error("timer should use cron expression")
+	}
+
+	// Should also produce a .path unit for on-demand tasks between scheduled runs
+	pathUnit, ok := units["con-reporter.path"]
+	if !ok {
+		t.Fatal("expected con-reporter.path unit for inbox watching")
+	}
+	if !strings.Contains(pathUnit, "PathChanged=/srv/con/agents/reporter/inbox") {
+		t.Error("path unit should watch agent inbox")
+	}
+
+	// Should produce a .service unit
+	if _, ok := units["con-reporter.service"]; !ok {
+		t.Fatal("expected con-reporter.service unit")
 	}
 }

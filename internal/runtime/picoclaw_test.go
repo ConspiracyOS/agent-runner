@@ -8,10 +8,11 @@ import (
 
 func TestBuildPicoConfig(t *testing.T) {
 	agent := config.AgentConfig{
-		Name:  "concierge",
-		Tier:  "operator",
-		CLI:   "picoclaw",
-		Model: "google/gemini-2.0-flash-001",
+		Name:     "concierge",
+		Tier:     "operator",
+		Runner:   "picoclaw",
+		Provider: "openrouter",
+		Model:    "google/gemini-2.0-flash-001",
 	}
 
 	t.Setenv("CON_OPENROUTER_API_KEY", "sk-or-test-key")
@@ -44,7 +45,23 @@ func TestBuildPicoConfigDefaultModel(t *testing.T) {
 	}
 }
 
-func TestBuildPicoConfigProviderPriority(t *testing.T) {
+func TestBuildPicoConfigAPIKeyFromEnv(t *testing.T) {
+	agent := config.AgentConfig{
+		Name:      "test",
+		Provider:  "anthropic",
+		APIKeyEnv: "MY_CUSTOM_KEY",
+	}
+
+	t.Setenv("MY_CUSTOM_KEY", "sk-ant-custom")
+
+	pcfg := BuildPicoConfig(agent)
+	if pcfg.Providers.Anthropic.APIKey != "sk-ant-custom" {
+		t.Errorf("expected custom key, got %q", pcfg.Providers.Anthropic.APIKey)
+	}
+}
+
+func TestBuildPicoConfigLegacyFallback(t *testing.T) {
+	// No provider set — falls back to legacy env var cascade
 	agent := config.AgentConfig{Name: "test"}
 
 	t.Setenv("CON_OPENROUTER_API_KEY", "")

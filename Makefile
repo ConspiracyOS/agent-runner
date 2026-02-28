@@ -1,4 +1,4 @@
-.PHONY: build test clean linux linux-arm64 image run stop task deploy apply status reset
+.PHONY: build test clean linux linux-arm64 image run stop task deploy apply status reset discord
 
 # Container instance name — override for production: make deploy NAME=cos
 NAME ?= conspiracyos
@@ -76,6 +76,10 @@ reset:
 	container exec $(NAME) bash -c 'rm -rf /srv/con && rm -f /srv/con/.bootstrapped'
 	container exec $(NAME) con bootstrap
 	@echo "Reset complete. State wiped, config preserved."
+
+# Build Discord driver (runs on host, not in container)
+discord:
+	go build -o con-discord ./drivers/discord/
 
 # Run all tests
 test:

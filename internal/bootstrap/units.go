@@ -89,6 +89,8 @@ ProtectSystem=strict
 ReadWritePaths=/srv/con/agents
 ReadWritePaths=/srv/con/artifacts
 ReadWritePaths=/srv/con/logs/audit
+ReadWritePaths=/srv/con/policy
+ReadWritePaths=/srv/con/ledger
 `
 	}
 	return base
@@ -171,6 +173,19 @@ Persistent=true
 WantedBy=timers.target
 `, agent.Name, agent.Cron)
 		units[svcName+".timer"] = timer
+
+		// Also watch inbox for on-demand tasks between scheduled runs
+		path := fmt.Sprintf(`[Unit]
+Description=ConspiracyOS inbox watcher: %s
+
+[Path]
+PathChanged=/srv/con/agents/%s/inbox
+MakeDirectory=yes
+
+[Install]
+WantedBy=multi-user.target
+`, agent.Name, agent.Name)
+		units[svcName+".path"] = path
 	}
 
 	return units

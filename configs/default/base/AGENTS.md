@@ -35,6 +35,11 @@ To send a task to another agent, write a plain text task file to their inbox:
 
 The file content is the task description in plain text. No special format required.
 Name files with a numeric prefix for ordering (e.g. `001-deploy-site.task`).
+**Set permissions to mode 640** so the target agent can read the file:
+
+```
+chmod 640 /srv/con/agents/<target>/inbox/<NNN>-<id>.task
+```
 
 Do not communicate outside of inboxes unless a skill explicitly instructs otherwise.
 

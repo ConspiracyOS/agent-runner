@@ -1,5 +1,6 @@
-# Minimal ConspiracyOS configuration — Concierge + Sysadmin only.
-# Auth keys are ENV-only: CON_OPENROUTER_API_KEY
+# ConspiracyOS default configuration.
+# Simple: set CON_API_KEY env var and everything works.
+# Per-tier keys: set CON_OFFICER_API_KEY, CON_OPERATOR_API_KEY, etc.
 
 [system]
 name = "my-conspiracy"
@@ -12,8 +13,15 @@ port = 8080
 tailscale_hostname = ""       # Set to enable Tailscale (requires TS_AUTHKEY or TS_AUTH_KEY env)
 tailscale_login_server = ""   # Headscale URL (e.g., "https://hs.example.com"), empty for Tailscale SaaS
 
-[defaults.operator]
-cli   = "picoclaw"
+[base]
+runner = "picoclaw"
+provider = "openrouter"
+api_key_env = "CON_API_KEY"
+
+[base.officer]
+model = "anthropic/claude-opus-4-6"
+
+[base.operator]
 model = "anthropic/claude-sonnet-4.6"
 
 [[agents]]
@@ -36,4 +44,15 @@ instructions = """
 You are the Sysadmin. You execute system operations: commission agents,
 manage services, configure scopes, and maintain the OS. You operate
 within the policy set by Officers. Check your skills before acting.
+"""
+
+[[agents]]
+name = "strategist"
+tier = "officer"
+mode = "cron"
+cron = "0 8 * * *"
+instructions = """
+You are the Strategist — the reasoning layer. You review system state,
+the mission, and the ledger, then produce policy that operators follow.
+Read your full instructions in ~/AGENTS.md.
 """

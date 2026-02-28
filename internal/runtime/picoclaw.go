@@ -50,17 +50,37 @@ func BuildPicoConfig(agent conconfig.AgentConfig) *pcconfig.Config {
 	cfg.Agents.Defaults.MaxTokens = 8192
 	cfg.Agents.Defaults.MaxToolIterations = 200
 
-	if key := os.Getenv("CON_OPENROUTER_API_KEY"); key != "" {
-		cfg.Providers.OpenRouter = pcconfig.ProviderConfig{
-			APIKey: key,
+	// Resolve API key from config. The agent's APIKeyEnv field names the env var.
+	// Falls back to legacy env vars for backwards compatibility.
+	apiKey := ""
+	if agent.APIKeyEnv != "" {
+		apiKey = os.Getenv(agent.APIKeyEnv)
+	}
+
+	switch agent.Provider {
+	case "openrouter":
+		if apiKey == "" {
+			apiKey = os.Getenv("CON_OPENROUTER_API_KEY")
 		}
-	} else if key := os.Getenv("CON_AUTH_ANTHROPIC"); key != "" {
-		cfg.Providers.Anthropic = pcconfig.ProviderConfig{
-			APIKey: key,
+		cfg.Providers.OpenRouter = pcconfig.ProviderConfig{APIKey: apiKey}
+	case "anthropic":
+		if apiKey == "" {
+			apiKey = os.Getenv("CON_AUTH_ANTHROPIC")
 		}
-	} else if key := os.Getenv("CON_AUTH_OPENAI"); key != "" {
-		cfg.Providers.OpenAI = pcconfig.ProviderConfig{
-			APIKey: key,
+		cfg.Providers.Anthropic = pcconfig.ProviderConfig{APIKey: apiKey}
+	case "openai":
+		if apiKey == "" {
+			apiKey = os.Getenv("CON_AUTH_OPENAI")
+		}
+		cfg.Providers.OpenAI = pcconfig.ProviderConfig{APIKey: apiKey}
+	default:
+		// No provider specified or unknown — try legacy env var cascade
+		if key := os.Getenv("CON_OPENROUTER_API_KEY"); key != "" {
+			cfg.Providers.OpenRouter = pcconfig.ProviderConfig{APIKey: key}
+		} else if key := os.Getenv("CON_AUTH_ANTHROPIC"); key != "" {
+			cfg.Providers.Anthropic = pcconfig.ProviderConfig{APIKey: key}
+		} else if key := os.Getenv("CON_AUTH_OPENAI"); key != "" {
+			cfg.Providers.OpenAI = pcconfig.ProviderConfig{APIKey: key}
 		}
 	}
 

@@ -65,6 +65,8 @@ func PlanProvision(cfg *config.Config) []string {
 	cmds = append(cmds, "install -d -m 755 /srv/con/logs/audit")
 	cmds = append(cmds, "install -d -m 755 /srv/con/status")
 	cmds = append(cmds, "install -d -m 755 /srv/con/scopes")
+	cmds = append(cmds, "install -d -m 755 /srv/con/policy")
+	cmds = append(cmds, "install -d -m 755 /srv/con/ledger")
 
 	// Per-agent dirs
 	for _, a := range cfg.Agents {

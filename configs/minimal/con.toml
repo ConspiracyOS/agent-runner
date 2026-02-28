@@ -1,5 +1,5 @@
 # Minimal ConspiracyOS configuration — Concierge only.
-# Auth keys are ENV-only: CON_OPENROUTER_API_KEY
+# Set CON_API_KEY env var to get started.
 
 [system]
 name = "my-conspiracy"
@@ -7,9 +7,13 @@ name = "my-conspiracy"
 [dashboard]
 enabled = false
 
-[defaults.operator]
-cli   = "picoclaw"
-model = "anthropic/claude-sonnet-4-6"
+[base]
+runner = "picoclaw"
+provider = "openrouter"
+api_key_env = "CON_API_KEY"
+
+[base.operator]
+model = "anthropic/claude-sonnet-4.6"
 
 [[agents]]
 name = "concierge"

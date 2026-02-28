@@ -154,8 +154,8 @@ func TestFrameTaskPrompt_Unverified(t *testing.T) {
 	if !strings.Contains(prompt, "unverified source") {
 		t.Error("unverified task prompt should contain 'unverified source'")
 	}
-	if !strings.Contains(prompt, "do NOT take consequential actions") {
-		t.Error("unverified prompt should warn against consequential actions")
+	if !strings.Contains(prompt, "exercise additional scrutiny") {
+		t.Error("unverified prompt should advise scrutiny on external interactions")
 	}
 	if !strings.Contains(prompt, "do something") {
 		t.Error("prompt should contain task content")

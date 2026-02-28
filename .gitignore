@@ -1,5 +1,10 @@
 tmp/
 /con
+/con-discord
 /conctl
+/discord
 *.exe
 .env
+drivers/*/.env
+.playwright-mcp/
+os/

@@ -8,11 +8,19 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
+// legacyConfig handles the old [defaults.<tier>] format for backwards compatibility.
+type legacyConfig struct {
+	Defaults map[string]TierConfig `toml:"defaults"`
+}
+
 func Parse(path string) (*Config, error) {
 	var cfg Config
 	if _, err := toml.DecodeFile(path, &cfg); err != nil {
 		return nil, fmt.Errorf("parsing %s: %w", path, err)
 	}
+
+	// Backwards compat: migrate [defaults.<tier>] to [base.<tier>]
+	migrateLegacyDefaults(path, &cfg)
 
 	applyENVOverrides(&cfg)
 	applyDefaults(&cfg)
@@ -22,6 +30,37 @@ func Parse(path string) (*Config, error) {
 	}
 
 	return &cfg, nil
+}
+
+// migrateLegacyDefaults reads [defaults.*] from the file and maps it to Base.
+func migrateLegacyDefaults(path string, cfg *Config) {
+	var legacy legacyConfig
+	if _, err := toml.DecodeFile(path, &legacy); err != nil || legacy.Defaults == nil {
+		return
+	}
+
+	for tier, td := range legacy.Defaults {
+		tc := TierConfig{
+			Runner:    td.Runner,
+			Provider:  td.Provider,
+			Model:     td.Model,
+			APIKeyEnv: td.APIKeyEnv,
+		}
+		switch tier {
+		case "officer":
+			if cfg.Base.Officer == (TierConfig{}) {
+				cfg.Base.Officer = tc
+			}
+		case "operator":
+			if cfg.Base.Operator == (TierConfig{}) {
+				cfg.Base.Operator = tc
+			}
+		case "worker":
+			if cfg.Base.Worker == (TierConfig{}) {
+				cfg.Base.Worker = tc
+			}
+		}
+	}
 }
 
 func applyENVOverrides(cfg *Config) {
@@ -75,6 +114,11 @@ func applyDefaults(cfg *Config) {
 func validate(cfg *Config) error {
 	validTiers := map[string]bool{"officer": true, "operator": true, "worker": true}
 	validModes := map[string]bool{"on-demand": true, "continuous": true, "cron": true}
+	validRunners := map[string]bool{"picoclaw": true, "claude": true, "codex": true, "": true}
+	validProviders := map[string]bool{
+		"openrouter": true, "anthropic": true, "openai": true,
+		"claude_code": true, "": true,
+	}
 
 	for i, a := range cfg.Agents {
 		if a.Name == "" {
@@ -88,6 +132,46 @@ func validate(cfg *Config) error {
 		}
 		if a.Mode == "cron" && a.Cron == "" {
 			return fmt.Errorf("agent %q: cron mode requires a cron expression", a.Name)
+		}
+
+		// Validate runner if explicitly set on agent
+		runner := firstNonEmpty(a.Runner, a.CLI)
+		if runner != "" && !validRunners[runner] {
+			return fmt.Errorf("agent %q: invalid runner %q (must be picoclaw/claude/codex)", a.Name, runner)
+		}
+		if a.Provider != "" && !validProviders[a.Provider] {
+			return fmt.Errorf("agent %q: invalid provider %q (must be openrouter/anthropic/openai/claude_code)", a.Name, a.Provider)
+		}
+	}
+
+	// Validate runner-provider compatibility at the resolved level
+	for _, a := range cfg.Agents {
+		resolved := cfg.ResolvedAgent(a.Name)
+		if err := validateRunnerProvider(a.Name, resolved.Runner, resolved.Provider); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// validateRunnerProvider checks that a runner and provider are compatible.
+func validateRunnerProvider(agentName, runner, provider string) error {
+	switch runner {
+	case "claude":
+		// Claude Code supports anthropic and claude_code (OAuth)
+		if provider != "" && provider != "anthropic" && provider != "claude_code" {
+			return fmt.Errorf("agent %q: runner \"claude\" requires provider \"anthropic\" or \"claude_code\", got %q", agentName, provider)
+		}
+	case "codex":
+		// Codex supports openai
+		if provider != "" && provider != "openai" {
+			return fmt.Errorf("agent %q: runner \"codex\" requires provider \"openai\", got %q", agentName, provider)
+		}
+	case "picoclaw", "":
+		// PicoClaw supports openrouter, anthropic, openai
+		if provider == "claude_code" {
+			return fmt.Errorf("agent %q: runner \"picoclaw\" does not support provider \"claude_code\" (use runner \"claude\" instead)", agentName)
 		}
 	}
 	return nil

@@ -39,21 +39,77 @@ instructions = "You are the Sysadmin."
 	if cfg.Agents[0].Name != "concierge" {
 		t.Errorf("expected first agent 'concierge', got %q", cfg.Agents[0].Name)
 	}
-	if cfg.Agents[0].Tier != "operator" {
-		t.Errorf("expected tier 'operator', got %q", cfg.Agents[0].Tier)
-	}
 }
 
-func TestParseDefaultValues(t *testing.T) {
+func TestParseBaseConfig(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "con.toml")
 	os.WriteFile(path, []byte(`
 [system]
-name = "defaults-test"
+name = "base-test"
+
+[base]
+runner = "picoclaw"
+provider = "openrouter"
+api_key_env = "CON_API_KEY"
+
+[base.operator]
+model = "anthropic/claude-sonnet-4.6"
+
+[base.officer]
+model = "anthropic/claude-opus-4-6"
+api_key_env = "CON_OFFICER_KEY"
+
+[[agents]]
+name = "concierge"
+tier = "operator"
+mode = "on-demand"
+
+[[agents]]
+name = "strategist"
+tier = "officer"
+mode = "on-demand"
+`), 0644)
+
+	cfg, err := Parse(path)
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	// Operator resolves model from base.operator
+	op := cfg.ResolvedAgent("concierge")
+	if op.Model != "anthropic/claude-sonnet-4.6" {
+		t.Errorf("operator model: expected sonnet, got %q", op.Model)
+	}
+	if op.Provider != "openrouter" {
+		t.Errorf("operator provider: expected openrouter, got %q", op.Provider)
+	}
+	if op.APIKeyEnv != "CON_API_KEY" {
+		t.Errorf("operator api_key_env: expected CON_API_KEY, got %q", op.APIKeyEnv)
+	}
+
+	// Officer resolves from base.officer, with tier-specific api_key_env
+	off := cfg.ResolvedAgent("strategist")
+	if off.Model != "anthropic/claude-opus-4-6" {
+		t.Errorf("officer model: expected opus, got %q", off.Model)
+	}
+	if off.APIKeyEnv != "CON_OFFICER_KEY" {
+		t.Errorf("officer api_key_env: expected CON_OFFICER_KEY, got %q", off.APIKeyEnv)
+	}
+	if off.Provider != "openrouter" {
+		t.Errorf("officer provider: expected openrouter (from base), got %q", off.Provider)
+	}
+}
+
+func TestParseLegacyDefaults(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "con.toml")
+	os.WriteFile(path, []byte(`
+[system]
+name = "legacy-test"
 
 [defaults.operator]
-cli   = "picoclaw"
-model = "anthropic/claude-sonnet-4-6"
+model = "anthropic/claude-sonnet-4.6"
 
 [[agents]]
 name = "concierge"
@@ -67,11 +123,48 @@ mode = "on-demand"
 	}
 
 	agent := cfg.ResolvedAgent("concierge")
-	if agent.CLI != "picoclaw" {
-		t.Errorf("expected cli 'picoclaw', got %q", agent.CLI)
+	if agent.Model != "anthropic/claude-sonnet-4.6" {
+		t.Errorf("expected model from legacy defaults, got %q", agent.Model)
 	}
-	if agent.Model != "anthropic/claude-sonnet-4-6" {
-		t.Errorf("expected model from defaults, got %q", agent.Model)
+	if agent.Runner != "picoclaw" {
+		t.Errorf("expected default runner picoclaw, got %q", agent.Runner)
+	}
+}
+
+func TestResolvedAgentOverridesBase(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "con.toml")
+	os.WriteFile(path, []byte(`
+[base]
+provider = "openrouter"
+model = "default-model"
+
+[base.worker]
+model = "cheap-model"
+
+[[agents]]
+name = "special-worker"
+tier = "worker"
+mode = "on-demand"
+model = "expensive-model"
+provider = "anthropic"
+api_key_env = "SPECIAL_KEY"
+`), 0644)
+
+	cfg, err := Parse(path)
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	agent := cfg.ResolvedAgent("special-worker")
+	if agent.Model != "expensive-model" {
+		t.Errorf("agent model should override tier, got %q", agent.Model)
+	}
+	if agent.Provider != "anthropic" {
+		t.Errorf("agent provider should override base, got %q", agent.Provider)
+	}
+	if agent.APIKeyEnv != "SPECIAL_KEY" {
+		t.Errorf("agent api_key_env should override, got %q", agent.APIKeyEnv)
 	}
 }
 
@@ -95,6 +188,85 @@ mode = "on-demand"
 	}
 }
 
+func TestValidateRunnerProviderCompat(t *testing.T) {
+	dir := t.TempDir()
+
+	tests := []struct {
+		name    string
+		toml    string
+		wantErr bool
+	}{
+		{
+			name: "picoclaw+openrouter ok",
+			toml: `[[agents]]
+name = "a"
+tier = "operator"
+runner = "picoclaw"
+provider = "openrouter"`,
+			wantErr: false,
+		},
+		{
+			name: "picoclaw+claude_code invalid",
+			toml: `[[agents]]
+name = "a"
+tier = "operator"
+runner = "picoclaw"
+provider = "claude_code"`,
+			wantErr: true,
+		},
+		{
+			name: "claude+anthropic ok",
+			toml: `[[agents]]
+name = "a"
+tier = "operator"
+runner = "claude"
+provider = "anthropic"`,
+			wantErr: false,
+		},
+		{
+			name: "claude+openrouter invalid",
+			toml: `[[agents]]
+name = "a"
+tier = "operator"
+runner = "claude"
+provider = "openrouter"`,
+			wantErr: true,
+		},
+		{
+			name: "codex+openai ok",
+			toml: `[[agents]]
+name = "a"
+tier = "operator"
+runner = "codex"
+provider = "openai"`,
+			wantErr: false,
+		},
+		{
+			name: "codex+anthropic invalid",
+			toml: `[[agents]]
+name = "a"
+tier = "operator"
+runner = "codex"
+provider = "anthropic"`,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(dir, tt.name+".toml")
+			os.WriteFile(path, []byte(tt.toml), 0644)
+			_, err := Parse(path)
+			if tt.wantErr && err == nil {
+				t.Error("expected validation error, got nil")
+			}
+			if !tt.wantErr && err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
 func TestENVOverridesConfig(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "con.toml")
@@ -111,5 +283,37 @@ name = "from-config"
 	}
 	if cfg.System.Name != "from-env" {
 		t.Errorf("expected env override 'from-env', got %q", cfg.System.Name)
+	}
+}
+
+func TestResolvedAgentGlobalDefaults(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "con.toml")
+	os.WriteFile(path, []byte(`
+[[agents]]
+name = "bare"
+tier = "operator"
+`), 0644)
+
+	cfg, err := Parse(path)
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	agent := cfg.ResolvedAgent("bare")
+	if agent.Runner != "picoclaw" {
+		t.Errorf("expected default runner picoclaw, got %q", agent.Runner)
+	}
+	if agent.Provider != "openrouter" {
+		t.Errorf("expected default provider openrouter, got %q", agent.Provider)
+	}
+	if agent.APIKeyEnv != "CON_API_KEY" {
+		t.Errorf("expected default api_key_env CON_API_KEY, got %q", agent.APIKeyEnv)
+	}
+	if agent.Mode != "on-demand" {
+		t.Errorf("expected default mode on-demand, got %q", agent.Mode)
+	}
+	if agent.MaxSessions != 1 {
+		t.Errorf("expected default max_sessions 1, got %d", agent.MaxSessions)
 	}
 }

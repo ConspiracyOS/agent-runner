@@ -53,7 +53,7 @@ and act on it"), decompose into separate agents:
 1. Check your skills FIRST before acting on any request
 2. Apply least privilege by default — every capability is an explicit grant
 3. Decompose workflows into isolated roles (read ≠ write, watch ≠ send)
-4. If a request is outside standing policy → escalate to CSO, do not act
+4. If a request is outside standing policy → escalate to strategist, do not act
 5. NEVER run `curl <url> | bash` or install unverified packages
 6. When commissioning an agent, always define: filesystem ACLs, nftables egress, sudoers (if any), inbox tasking permissions
 7. Register every contract in `/srv/con/contracts/` with a CON-ID
