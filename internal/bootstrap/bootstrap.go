@@ -18,9 +18,10 @@ func PlanProvision(cfg *config.Config) []string {
 	cmds = append(cmds, "groupadd -f workers")
 	cmds = append(cmds, "groupadd -f trusted")
 
-	// Fix /etc/con/env ownership — con-env.service runs before bootstrap,
-	// so the agents group doesn't exist yet on first boot. Fix it now.
-	cmds = append(cmds, "chgrp agents /etc/con/env 2>/dev/null || true")
+	// Lock down /etc/con/env — only root should read it.
+	// Agents receive env vars via systemd EnvironmentFile= injection.
+	cmds = append(cmds, "chmod 600 /etc/con/env 2>/dev/null || true")
+	cmds = append(cmds, "chown root:root /etc/con/env 2>/dev/null || true")
 
 	// Can-task groups (who can write to whose inbox)
 	for _, a := range cfg.Agents {
@@ -92,10 +93,11 @@ func PlanProvision(cfg *config.Config) []string {
 	cmds = append(cmds, "setfacl -m u:a-sysadmin:x /srv/con/agents/concierge/")
 	cmds = append(cmds, "setfacl -m u:a-sysadmin:rwx /srv/con/agents/concierge/inbox/")
 
-	// Sysadmin write access to inner config, contracts, and audit log (for commissioning)
+	// Sysadmin write access to inner config and contracts (for commissioning)
 	cmds = append(cmds, "setfacl -m u:a-sysadmin:rwx /srv/con/config/agents/")
 	cmds = append(cmds, "setfacl -m u:a-sysadmin:rwx /srv/con/contracts/")
-	cmds = append(cmds, "setfacl -m u:a-sysadmin:rwx /srv/con/logs/audit/")
+	// All agents can write audit logs (append date-based entries)
+	cmds = append(cmds, "setfacl -m g:agents:rwx /srv/con/logs/audit/")
 
 	// 5. SSH authorized keys (for make apply, SSH access)
 	if len(cfg.Infra.SSHAuthorizedKeys) > 0 {
@@ -118,9 +120,13 @@ func PlanProvision(cfg *config.Config) []string {
 	cmds = append(cmds, "cp /etc/con/contracts/*.yaml /srv/con/contracts/ 2>/dev/null || true")
 	cmds = append(cmds, "cp -r /etc/con/contracts/scripts/ /srv/con/contracts/scripts/ 2>/dev/null || true")
 
-	// 7. Initialize /srv/con/ as git repo with .gitignore for workspace dirs
+	// 7. Initialize /srv/con/ as git repo with .gitignore
 	cmds = append(cmds, `cd /srv/con && git init && git config user.name 'con' && git config user.email 'con@localhost' && cat > .gitignore << 'GITIGNORE'
 agents/*/workspace/
+artifacts/
+*.env
+*.pem
+*.key
 GITIGNORE
 git add -A && git commit -m 'initial state' --allow-empty || true`)
 
