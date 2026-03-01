@@ -90,7 +90,7 @@ func runCheck(ctx context.Context, contractID string, ch Check, contractsDir str
 		if !filepath.IsAbs(scriptPath) {
 			scriptPath = filepath.Join(contractsDir, scriptPath)
 		}
-		command = scriptPath
+		command = "sh " + scriptPath
 
 		if ch.Script.Timeout != "" {
 			if d, err := time.ParseDuration(ch.Script.Timeout); err == nil {

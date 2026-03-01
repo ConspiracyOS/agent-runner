@@ -17,6 +17,11 @@ find "$SRC" -type f | while IFS= read -r f; do
     container exec "$NAME" bash -c "cat > '/etc/con/${rel}' << 'CONEOF'
 ${content}
 CONEOF"
+
+    # Preserve execute bit from source
+    if [ -x "$f" ]; then
+        container exec "$NAME" chmod +x "/etc/con/${rel}"
+    fi
     echo "  + /etc/con/${rel}"
 done
 
