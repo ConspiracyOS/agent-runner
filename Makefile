@@ -1,11 +1,13 @@
-.PHONY: build test test-smoke test-e2e test-all clean linux linux-arm64 image run stop task deploy apply status reset discord tui web
+.PHONY: build test test-smoke test-e2e test-all clean linux linux-arm64 image run stop task deploy apply status reset discord
 
 # Container instance name — override for production: make deploy NAME=cos
 NAME ?= conspiracyos
 
-# SSH key for apply target — override: make apply SSH_KEY=~/.ssh/other_key PROFILE=default
-SSH_KEY ?= ~/.ssh/id_ed25519
-SSH_OPTS := -o StrictHostKeyChecking=no -o BatchMode=yes -i $(SSH_KEY)
+# Config profile baked into image — override: make image PROFILE=default
+PROFILE ?= minimal
+
+# Persistent Tailscale state — survives container rebuilds
+TS_STATE ?= $(CURDIR)/srv/dev/tailscale-state
 
 # Build for current platform
 build:
@@ -21,11 +23,12 @@ linux-arm64:
 
 # Build container image (Apple Silicon) — generic, no profile arg
 image: linux-arm64
-	container build --dns 8.8.8.8 -t conspiracyos -f Containerfile .
+	container build --dns 8.8.8.8 --build-arg PROFILE=$(PROFILE) -t conspiracyos -f Containerfile .
 
 # Run the conspiracy (reads container env for secrets, detached)
 run:
-	container run -d --name $(NAME) --env-file srv/dev/container.env conspiracyos
+	@mkdir -p $(TS_STATE)
+	container run -d --name $(NAME) -v $(TS_STATE):/var/lib/tailscale-persist --env-file srv/dev/container.env conspiracyos
 
 # Stop the conspiracy
 stop:
@@ -42,22 +45,16 @@ task:
 # Deploy: rebuild image and restart container (boots with minimal profile)
 deploy: image
 	-container kill $(NAME) 2>/dev/null; container rm $(NAME) 2>/dev/null
-	container run -d --name $(NAME) --env-file srv/dev/container.env conspiracyos
+	@mkdir -p $(TS_STATE)
+	container run -d --name $(NAME) -v $(TS_STATE):/var/lib/tailscale-persist --env-file srv/dev/container.env conspiracyos
 
-# Apply a config profile to a running instance
-# Resolves container IP and uses SSH tar pipe for file transfer
-# (Apple Container CLI doesn't support stdin piping for container exec)
-# Requires: CON_SSH_AUTHORIZED_KEYS in srv/dev/container.env or ssh-copy-id to container
+# Apply a config profile to a running instance via container exec
 # Usage: make apply PROFILE=default
 apply:
 	@if [ -z "$(PROFILE)" ]; then echo "Usage: make apply PROFILE=<name>"; exit 1; fi
 	@if [ ! -d "configs/$(PROFILE)" ]; then echo "Error: profile not found: configs/$(PROFILE)"; exit 1; fi
-	$(eval IP := $(shell container list 2>/dev/null | grep '$(NAME) ' | awk '{print $$6}' | cut -d/ -f1))
-	@if [ -z "$(IP)" ]; then echo "Error: container $(NAME) not running"; exit 1; fi
-	@echo "Applying profile: $(PROFILE) -> $(IP)"
-	tar -C configs/$(PROFILE) -cf - . | ssh $(SSH_OPTS) root@$(IP) 'tar -C /etc/con -xf -'
-	ssh $(SSH_OPTS) root@$(IP) 'set -a; . /etc/con/env 2>/dev/null; set +a; con bootstrap'
-	@echo "Profile $(PROFILE) applied successfully."
+	@echo "Applying profile: $(PROFILE) -> $(NAME)"
+	@scripts/con-apply.sh "$(PROFILE)" "$(NAME)"
 
 # Show agent status
 status:
@@ -81,14 +78,6 @@ reset:
 discord:
 	go build -o con-discord ./drivers/discord/
 
-# Build TUI client (runs on host, not in container)
-tui:
-	go build -o con-tui ./clients/tui/
-
-# Build web client (runs on host, not in container)
-web:
-	go build -o con-web ./clients/web/
-
 # Run Go unit tests (fast, host-side)
 test:
 	go test ./... -v
@@ -109,4 +98,4 @@ test-all: test test-smoke
 
 # Clean
 clean:
-	rm -f con
+	rm -f con con-discord

@@ -52,6 +52,26 @@ func TestExecRuntime_BadCommand(t *testing.T) {
 	}
 }
 
+func TestExecRuntime_OutputTruncation(t *testing.T) {
+	// Generate 2MB of output — should be truncated to 1MB
+	rt := &Exec{
+		Cmd:       "sh",
+		Args:      []string{"-c", "dd if=/dev/zero bs=1024 count=2048 2>/dev/null"},
+		Workspace: t.TempDir(),
+	}
+
+	output, err := rt.Invoke(context.Background(), "", "test-session")
+	if err != nil {
+		t.Fatalf("Invoke failed: %v", err)
+	}
+	if len(output) > maxOutputSize {
+		t.Errorf("output should be truncated to %d bytes, got %d", maxOutputSize, len(output))
+	}
+	if len(output) < maxOutputSize {
+		t.Errorf("output should be at least %d bytes (was fully read), got %d", maxOutputSize, len(output))
+	}
+}
+
 func TestNew_PicoClaw(t *testing.T) {
 	agent := config.AgentConfig{Name: "test", CLI: "picoclaw"}
 	rt := New(agent)

@@ -10,5 +10,4 @@ checks:
       test: "[ $RESULT -ge 15 ]"
     on_fail:
       action: halt_agents
-      escalate: sysadmin
       message: "CON-SYS-001 FAILED: disk free below 15%"

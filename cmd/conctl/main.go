@@ -123,18 +123,16 @@ func runBootstrap() {
 		}
 	}
 
-	// Assemble AGENTS.md for each agent and fix ownership
+	// Assemble AGENTS.md for each agent — root-owned, read-only (Linux enforces integrity)
 	for _, a := range cfg.Agents {
 		resolved := cfg.ResolvedAgent(a.Name)
 		if err := runner.AssembleAgentsMD(resolved); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: AGENTS.md assembly for %s: %v\n", a.Name, err)
 			continue
 		}
-		// Fix ownership so agent user can overwrite on subsequent runs
-		user := "a-" + a.Name
-		homeDir := fmt.Sprintf("/home/%s", user)
-		chown := exec.Command("chown", user+":agents", homeDir+"/AGENTS.md")
-		chown.Run()
+		homeDir := fmt.Sprintf("/home/a-%s", a.Name)
+		exec.Command("chown", "root:root", homeDir+"/AGENTS.md").Run()
+		exec.Command("chmod", "0444", homeDir+"/AGENTS.md").Run()
 	}
 
 	// Deploy skills to each agent's workspace/skills/
@@ -237,7 +235,18 @@ func runHealthcheck() {
 		}
 	}
 
+	// Meta-escalation: if any contracts failed, send one summary task to sysadmin
 	if result.Failed > 0 {
+		var failures []string
+		for _, cr := range result.Results {
+			if !cr.Passed {
+				failures = append(failures, fmt.Sprintf("%s/%s", cr.ContractID, cr.CheckName))
+			}
+		}
+		msg := fmt.Sprintf("Healthcheck: %d contract(s) failed: %s. Review audit log and fix.", result.Failed, strings.Join(failures, ", "))
+		if err := contracts.Escalate("sysadmin", msg); err != nil {
+			fmt.Fprintf(os.Stderr, "healthcheck: escalation failed: %v\n", err)
+		}
 		os.Exit(1)
 	}
 }

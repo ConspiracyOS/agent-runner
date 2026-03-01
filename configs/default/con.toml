@@ -9,10 +9,6 @@ name = "my-conspiracy"
 enabled = true
 port = 8080
 
-[infra]
-tailscale_hostname = ""       # Set to enable Tailscale (requires TS_AUTHKEY or TS_AUTH_KEY env)
-tailscale_login_server = ""   # Headscale URL (e.g., "https://hs.example.com"), empty for Tailscale SaaS
-
 [base]
 runner = "picoclaw"
 provider = "openrouter"

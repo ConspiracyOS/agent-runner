@@ -1,0 +1,73 @@
+# ConspiracyOS configuration reference.
+# All options with defaults shown. Uncomment and modify as needed.
+# Copy to configs/<profile>/con.toml to create a new profile.
+
+[system]
+name = "my-conspiracy"
+
+# --- Dashboard (web UI + status page via nginx) ---
+# Omit this section entirely to disable.
+# [dashboard]
+# enabled = true
+# port = 8080                           # nginx listen port (proxies to con-web on 3000)
+# bind = "0.0.0.0"                      # nginx bind address (overridden to Tailscale IP if TS active)
+
+# --- Infrastructure ---
+# Tailscale/Headscale config is set via env vars in container.env:
+#   TS_AUTHKEY                          - pre-auth key (standard Tailscale env var)
+#   CON_INFRA_TAILSCALE_HOSTNAME        - hostname to register as
+#   CON_INFRA_TAILSCALE_LOGIN_SERVER    - Headscale URL, empty for Tailscale SaaS
+# Provision with: ansible-playbook playbooks/local/cos-provision.yml (in Swarm repo)
+#
+# SSH keys are also set via env:
+#   CON_SSH_AUTHORIZED_KEYS             - newline-separated authorized_keys entries
+#
+# These can also be set in the config file (env vars take precedence):
+# [infra]
+# tailscale_hostname = ""
+# tailscale_login_server = ""
+# ssh_authorized_keys = []
+
+# --- Agent defaults ---
+# Resolution order: agent > base.<tier> > base
+[base]
+runner = "picoclaw"                      # picoclaw (built-in) or exec (external CLI)
+provider = "openrouter"                  # LLM provider
+# model = ""                            # model name (provider-specific)
+api_key_env = "CON_API_KEY"              # env var name for LLM API key
+
+# Per-tier overrides (optional)
+# [base.officer]
+# model = "anthropic/claude-opus-4-6"
+# [base.operator]
+# model = "anthropic/claude-sonnet-4.6"
+# [base.worker]
+# runner = "picoclaw"
+
+# --- Network ---
+# [network]
+# outbound_filter = ""                  # nftables ruleset name
+
+# --- Contracts ---
+# [contracts.system]
+# disk_min_free_pct = 10
+# mem_min_free_pct = 10
+# max_load_factor = 4.0
+# max_session_min = 30
+# healthcheck_interval = "5m"
+
+# --- Agents ---
+# [[agents]]
+# name = "concierge"                    # becomes Linux user a-concierge
+# tier = "operator"                     # officer | operator | worker
+# mode = "on-demand"                    # on-demand | cron
+# cron = ""                             # cron expression (only for mode = "cron")
+# roles = []                            # role directories in configs/<profile>/roles/
+# groups = []                           # additional Linux groups
+# scopes = []                           # filesystem scope names
+# runner = ""                           # override base runner
+# provider = ""                         # override base provider
+# model = ""                            # override base model
+# api_key_env = ""                      # override base API key env var
+# max_sessions = 1                      # max concurrent sessions
+# instructions = """..."""              # inline agent instructions

@@ -10,5 +10,4 @@ checks:
       test: "echo \"$RESULT\" | awk '{print ($1==\"root\" && $2==\"root\" && $3==\"600\") ? 0 : 1}' | grep -q 0"
     on_fail:
       action: alert
-      escalate: sysadmin
       message: "CON-SYS-006 FAILED: /etc/con/env is not mode 600 root:root — agents can read secrets directly"

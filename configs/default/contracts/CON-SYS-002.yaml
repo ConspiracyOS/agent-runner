@@ -10,5 +10,4 @@ checks:
       test: "[ $RESULT -ge 10 ]"
     on_fail:
       action: halt_agents
-      escalate: sysadmin
       message: "CON-SYS-002 FAILED: available memory below 10%"

@@ -115,7 +115,6 @@ No single agent compromise leaks data AND exfiltrates it.
          test: "[ $RESULT <condition> ]"
        on_fail:
          action: quarantine    # halt_agents | quarantine | kill_session | alert
-         escalate: sysadmin    # or cso for policy violations
          message: "CON-<NNN> FAILED: <description>"
    ```
 5. For complex checks, use a script:

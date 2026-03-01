@@ -10,5 +10,4 @@ checks:
       timeout: 10s
     on_fail:
       action: alert
-      escalate: sysadmin
       message: "CON-AGENT-001 FAILED: agent directory permissions or ownership incorrect"

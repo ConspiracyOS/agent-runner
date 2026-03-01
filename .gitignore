@@ -1,10 +1,7 @@
 tmp/
 /con
 /con-discord
-/con-tui
-/con-web
-/conctl
-/discord
+
 *.exe
 .env
 drivers/*/.env

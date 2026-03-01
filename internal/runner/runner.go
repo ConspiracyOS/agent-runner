@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"os/exec"
@@ -106,10 +107,13 @@ func PickOldestTask(inboxPath string) (Task, error) {
 
 	// Provenance: root-owned or trusted-group-owned files are verified (user/system origin).
 	// Agent-owned files are unverified (may have been influenced by external content).
+	// Lstat: symlinks are always unverified — an agent could point to a root-owned file.
 	trust := TrustUnverified
-	if info, err := os.Stat(path); err == nil {
-		if stat, ok := info.Sys().(*syscall.Stat_t); ok && isTrustedUID(stat.Uid) {
-			trust = TrustVerified
+	if info, err := os.Lstat(path); err == nil {
+		if info.Mode()&os.ModeSymlink == 0 {
+			if stat, ok := info.Sys().(*syscall.Stat_t); ok && isTrustedUID(stat.Uid) {
+				trust = TrustVerified
+			}
 		}
 	}
 
@@ -165,7 +169,19 @@ func AssembleAgentsMD(agent config.AgentConfig) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(homeDir, "AGENTS.md"), []byte(agentsMD), 0644)
+	if err := os.WriteFile(filepath.Join(homeDir, "AGENTS.md"), []byte(agentsMD), 0644); err != nil {
+		return err
+	}
+	// Write expected hash for integrity verification (CON-AGENT-002).
+	// Only during bootstrap (root) — the hash file must be root-owned, mode 0444,
+	// so agents cannot tamper with it. Agent-run assemblies skip this.
+	if os.Getuid() == 0 {
+		hash := sha256.Sum256([]byte(agentsMD))
+		if err := os.WriteFile(filepath.Join(homeDir, "AGENTS.md.sha256"), []byte(fmt.Sprintf("%x\n", hash)), 0444); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ReadSkills reads all .md files from skillsDir and returns concatenated skill content.
@@ -232,6 +248,9 @@ func Run(agentName string, cfg *config.Config) error {
 	output, err := rt.Invoke(ctx, prompt, sessionKey)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "agent runtime error: %v\n", err)
+		if output == "" {
+			return fmt.Errorf("runtime returned no output: %w", err)
+		}
 	}
 
 	// 5. Write ledger entry (append-only cost/activity log)

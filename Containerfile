@@ -27,8 +27,9 @@ RUN curl -fsSL https://tailscale.com/install.sh | sh
 COPY con /usr/local/bin/con
 RUN chmod +x /usr/local/bin/con
 
-# Factory default: minimal profile (apply other profiles at runtime via `make apply`)
-COPY configs/minimal/ /etc/con/
+# Config profile: override at build time with --build-arg PROFILE=default
+ARG PROFILE=minimal
+COPY configs/${PROFILE}/ /etc/con/
 
 # Status page generator (runs after each healthcheck)
 COPY scripts/con-status-page.sh /usr/local/bin/con-status-page
@@ -54,9 +55,9 @@ RUN printf '[Unit]\nDescription=ConspiracyOS Bootstrap\nAfter=network.target con
 # Copy test suites (smoke + e2e)
 COPY test/ /test/
 
-# SSH config
+# SSH config (key-only auth for make apply)
 RUN mkdir -p /run/sshd && \
-    sed -i 's/#PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
+    sed -i 's/#PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
 
 # systemd as PID 1
 STOPSIGNAL SIGRTMIN+3

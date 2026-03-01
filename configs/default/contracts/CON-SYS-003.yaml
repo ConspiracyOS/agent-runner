@@ -10,5 +10,4 @@ checks:
       test: "[ $RESULT -le 200 ]"
     on_fail:
       action: halt_agents
-      escalate: sysadmin
       message: "CON-SYS-003 FAILED: load average exceeds 2.0x CPU cores"

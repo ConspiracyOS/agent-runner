@@ -1,11 +1,9 @@
 # Minimal ConspiracyOS configuration — Concierge only.
 # Set CON_API_KEY env var to get started.
+# See configs/example.toml for all options.
 
 [system]
 name = "my-conspiracy"
-
-[dashboard]
-enabled = false
 
 [base]
 runner = "picoclaw"

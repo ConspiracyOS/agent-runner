@@ -84,14 +84,23 @@ func loadConfig() Config {
 	return cfg
 }
 
-// sshRun executes a command on the container via SSH and returns stdout.
-func sshRun(cfg Config, cmd string) (string, error) {
+// Executor abstracts command execution against the conspiracy instance.
+type Executor interface {
+	Run(cmd string) (string, error)
+}
+
+// SSHExecutor runs commands via SSH to the container.
+type SSHExecutor struct {
+	Config Config
+}
+
+func (e *SSHExecutor) Run(cmd string) (string, error) {
 	args := []string{
 		"-o", "StrictHostKeyChecking=no",
 		"-o", "BatchMode=yes",
-		"-i", cfg.SSHKey,
-		"-p", cfg.SSHPort,
-		fmt.Sprintf("%s@%s", cfg.SSHUser, cfg.SSHHost),
+		"-i", e.Config.SSHKey,
+		"-p", e.Config.SSHPort,
+		fmt.Sprintf("%s@%s", e.Config.SSHUser, e.Config.SSHHost),
 		cmd,
 	}
 	out, err := exec.Command("ssh", args...).CombinedOutput()
@@ -214,11 +223,12 @@ func main() {
 		dg.Identify.Intents |= discordgo.IntentsGuildMessages | discordgo.IntentsMessageContent
 	}
 
+	exec := &SSHExecutor{Config: cfg}
 	tracker := newResponseTracker()
 	dms := newDMChannels()
 
 	// Seed the tracker with existing responses so we only post new ones
-	seedResponses(cfg, tracker)
+	seedResponses(exec, tracker)
 
 	// Message handler: Discord → conspiracy inbox
 	dg.AddHandler(func(s *discordgo.Session, m *discordgo.MessageCreate) {
@@ -261,7 +271,7 @@ func main() {
 		escaped := strings.ReplaceAll(message, "'", "'\\''")
 		cmd := fmt.Sprintf("con task '%s'", escaped)
 
-		_, err := sshRun(cfg, cmd)
+		_, err := exec.Run(cmd)
 		if err != nil {
 			log.Printf("task failed: %v", err)
 			s.MessageReactionAdd(m.ChannelID, m.ID, "\u274c") // cross mark
@@ -290,17 +300,17 @@ func main() {
 		data := i.ApplicationCommandData()
 		switch data.Name {
 		case "status":
-			handleStatus(s, i, cfg)
+			handleStatus(s, i, exec)
 		case "clear":
-			handleClear(s, i, cfg)
+			handleClear(s, i, exec)
 		case "logs":
-			handleLogs(s, i, cfg, data.Options)
+			handleLogs(s, i, exec, data.Options)
 		case "responses":
-			handleResponses(s, i, cfg)
+			handleResponses(s, i, exec)
 		case "history":
-			handleHistory(s, i, cfg, data.Options)
+			handleHistory(s, i, exec, data.Options)
 		case "debug":
-			handleDebug(s, i, cfg, tracker, dms)
+			handleDebug(s, i, cfg, exec, tracker, dms)
 		}
 	})
 
@@ -327,7 +337,7 @@ func main() {
 		mode, cfg.SSHUser, cfg.SSHHost, cfg.SSHPort)
 
 	// Start response poller
-	go pollResponses(dg, cfg, tracker, dms)
+	go pollResponses(dg, cfg, exec, tracker, dms)
 
 	// Block until signal
 	sig := make(chan os.Signal, 1)
@@ -354,8 +364,8 @@ func respond(s *discordgo.Session, i *discordgo.InteractionCreate, content strin
 	}
 }
 
-func handleStatus(s *discordgo.Session, i *discordgo.InteractionCreate, cfg Config) {
-	out, err := sshRun(cfg, "con status")
+func handleStatus(s *discordgo.Session, i *discordgo.InteractionCreate, exec Executor) {
+	out, err := exec.Run("con status")
 	if err != nil {
 		respond(s, i, fmt.Sprintf("SSH failed: %v\n%s", err, out))
 		return
@@ -363,8 +373,8 @@ func handleStatus(s *discordgo.Session, i *discordgo.InteractionCreate, cfg Conf
 	respond(s, i, fmt.Sprintf("```\n%s\n```", out))
 }
 
-func handleClear(s *discordgo.Session, i *discordgo.InteractionCreate, cfg Config) {
-	out, err := sshRun(cfg, "rm -f /srv/con/agents/concierge/workspace/sessions/*.json")
+func handleClear(s *discordgo.Session, i *discordgo.InteractionCreate, exec Executor) {
+	out, err := exec.Run("rm -f /srv/con/agents/concierge/workspace/sessions/*.json")
 	if err != nil {
 		respond(s, i, fmt.Sprintf("Failed to clear session: %v\n%s", err, out))
 		return
@@ -373,7 +383,7 @@ func handleClear(s *discordgo.Session, i *discordgo.InteractionCreate, cfg Confi
 	log.Printf("session cleared by %s", interactionUser(i))
 }
 
-func handleLogs(s *discordgo.Session, i *discordgo.InteractionCreate, cfg Config, opts []*discordgo.ApplicationCommandInteractionDataOption) {
+func handleLogs(s *discordgo.Session, i *discordgo.InteractionCreate, exec Executor, opts []*discordgo.ApplicationCommandInteractionDataOption) {
 	count := 20
 	for _, opt := range opts {
 		if opt.Name == "count" {
@@ -388,7 +398,7 @@ func handleLogs(s *discordgo.Session, i *discordgo.InteractionCreate, cfg Config
 	}
 
 	cmd := fmt.Sprintf("tail -n %d /srv/con/logs/audit/*.log 2>/dev/null", count)
-	out, err := sshRun(cfg, cmd)
+	out, err := exec.Run(cmd)
 	if err != nil || out == "" {
 		respond(s, i, "No audit log entries found.")
 		return
@@ -396,8 +406,8 @@ func handleLogs(s *discordgo.Session, i *discordgo.InteractionCreate, cfg Config
 	respond(s, i, fmt.Sprintf("```\n%s\n```", out))
 }
 
-func handleResponses(s *discordgo.Session, i *discordgo.InteractionCreate, cfg Config) {
-	out, err := sshRun(cfg, "con responses")
+func handleResponses(s *discordgo.Session, i *discordgo.InteractionCreate, exec Executor) {
+	out, err := exec.Run("con responses")
 	if err != nil {
 		respond(s, i, fmt.Sprintf("SSH failed: %v\n%s", err, out))
 		return
@@ -409,7 +419,7 @@ func handleResponses(s *discordgo.Session, i *discordgo.InteractionCreate, cfg C
 	respond(s, i, out)
 }
 
-func handleHistory(s *discordgo.Session, i *discordgo.InteractionCreate, cfg Config, opts []*discordgo.ApplicationCommandInteractionDataOption) {
+func handleHistory(s *discordgo.Session, i *discordgo.InteractionCreate, exec Executor, opts []*discordgo.ApplicationCommandInteractionDataOption) {
 	count := 5
 	for _, opt := range opts {
 		if opt.Name == "count" {
@@ -427,7 +437,7 @@ func handleHistory(s *discordgo.Session, i *discordgo.InteractionCreate, cfg Con
 		`ls -t /srv/con/agents/*/outbox/*.response 2>/dev/null | head -%d | while read f; do agent=$(echo "$f" | awk -F/ '{print $5}'); echo "**${agent}** ($(basename "$f"))"; cat "$f"; echo; echo "---"; done`,
 		count,
 	)
-	out, err := sshRun(cfg, cmd)
+	out, err := exec.Run(cmd)
 	if err != nil || out == "" {
 		respond(s, i, "No response history found.")
 		return
@@ -435,7 +445,7 @@ func handleHistory(s *discordgo.Session, i *discordgo.InteractionCreate, cfg Con
 	respond(s, i, out)
 }
 
-func handleDebug(s *discordgo.Session, i *discordgo.InteractionCreate, cfg Config, tracker *responseTracker, dms *dmChannels) {
+func handleDebug(s *discordgo.Session, i *discordgo.InteractionCreate, cfg Config, exec Executor, tracker *responseTracker, dms *dmChannels) {
 	mode := "DM"
 	if cfg.ChannelID != "" {
 		mode = fmt.Sprintf("channel %s", cfg.ChannelID)
@@ -445,7 +455,7 @@ func handleDebug(s *discordgo.Session, i *discordgo.InteractionCreate, cfg Confi
 
 	// Test SSH connectivity
 	sshStatus := "connected"
-	statusOut, err := sshRun(cfg, "con status")
+	statusOut, err := exec.Run("con status")
 	if err != nil {
 		sshStatus = fmt.Sprintf("FAILED: %v", err)
 		statusOut = ""
@@ -489,8 +499,8 @@ func interactionUser(i *discordgo.InteractionCreate) string {
 // --- Response polling ---
 
 // seedResponses marks all existing response files as seen so we don't replay history.
-func seedResponses(cfg Config, tracker *responseTracker) {
-	out, err := sshRun(cfg, "ls /srv/con/agents/*/outbox/*.response 2>/dev/null")
+func seedResponses(exec Executor, tracker *responseTracker) {
+	out, err := exec.Run("ls /srv/con/agents/*/outbox/*.response 2>/dev/null")
 	if err != nil || out == "" {
 		return
 	}
@@ -504,11 +514,11 @@ func seedResponses(cfg Config, tracker *responseTracker) {
 }
 
 // pollResponses checks for new response files and posts them to Discord.
-func pollResponses(dg *discordgo.Session, cfg Config, tracker *responseTracker, dms *dmChannels) {
+func pollResponses(dg *discordgo.Session, cfg Config, exec Executor, tracker *responseTracker, dms *dmChannels) {
 	for {
 		time.Sleep(5 * time.Second)
 
-		out, err := sshRun(cfg, "ls /srv/con/agents/*/outbox/*.response 2>/dev/null")
+		out, err := exec.Run("ls /srv/con/agents/*/outbox/*.response 2>/dev/null")
 		if err != nil || out == "" {
 			continue
 		}
@@ -522,7 +532,7 @@ func pollResponses(dg *discordgo.Session, cfg Config, tracker *responseTracker, 
 			// Extract agent name from path: /srv/con/agents/<name>/outbox/...
 			agent := agentFromPath(path)
 
-			content, err := sshRun(cfg, fmt.Sprintf("cat '%s'", path))
+			content, err := exec.Run(fmt.Sprintf("cat '%s'", path))
 			if err != nil {
 				log.Printf("reading response %s: %v", path, err)
 				continue

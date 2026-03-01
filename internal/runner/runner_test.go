@@ -340,6 +340,30 @@ func TestReadSkillsMissingDir(t *testing.T) {
 	}
 }
 
+func TestPickOldestTask_SymlinkUnverified(t *testing.T) {
+	inbox := t.TempDir()
+	targetDir := t.TempDir()
+
+	// Create a real file in another directory (simulates a root-owned file)
+	targetPath := filepath.Join(targetDir, "real.task")
+	os.WriteFile(targetPath, []byte("spoofed task"), 0644)
+
+	// Create a symlink in the inbox pointing to the target
+	symlinkPath := filepath.Join(inbox, "001-spoof.task")
+	os.Symlink(targetPath, symlinkPath)
+
+	task, err := PickOldestTask(inbox)
+	if err != nil {
+		t.Fatalf("PickOldestTask failed: %v", err)
+	}
+	if task.Trust != TrustUnverified {
+		t.Errorf("symlinked task should be TrustUnverified, got %s", task.Trust)
+	}
+	if task.Content != "spoofed task" {
+		t.Errorf("content should still be readable through symlink, got %q", task.Content)
+	}
+}
+
 func TestIsTrustedUID_WithGroupOverride(t *testing.T) {
 	uid := uint32(os.Getuid())
 	if uid == 0 {

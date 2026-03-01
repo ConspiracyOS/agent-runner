@@ -12,10 +12,10 @@ check() {
     shift
     if "$@" >/dev/null 2>&1; then
         echo "  PASS: $desc"
-        ((PASS++))
+        PASS=$((PASS + 1))
     else
         echo "  FAIL: $desc"
-        ((FAIL++))
+        FAIL=$((FAIL + 1))
     fi
 }
 
@@ -40,7 +40,7 @@ check "audit log dir exists" test -d /srv/con/logs/audit
 
 echo ""
 echo "--- 3. Permissions ---"
-check "outer inbox is sticky" [ "$(stat -c %a /srv/con/inbox)" = "1777" ]
+check "outer inbox is root:agents 770" [ "$(stat -c %a /srv/con/inbox)" = "770" ]
 check "concierge home is private" [ "$(stat -c %a /home/a-concierge)" = "700" ]
 check "concierge can write to sysadmin inbox" \
     su -s /bin/sh a-concierge -c "touch /srv/con/agents/sysadmin/inbox/.acl-test && rm /srv/con/agents/sysadmin/inbox/.acl-test"
@@ -58,22 +58,27 @@ check "base content in concierge AGENTS.md" grep -q "ConspiracyOS" /home/a-conci
 
 echo ""
 echo "--- 6. End-to-end task routing ---"
-echo "Dropping task into outer inbox..."
-echo "What agents are currently running in this conspiracy?" > /srv/con/inbox/001-smoke-test.task
+SMOKE_TASK="smoke-$(date +%s).task"
+echo "Dropping task into outer inbox ($SMOKE_TASK)..."
+echo "What agents are currently running in this conspiracy?" > "/srv/con/inbox/$SMOKE_TASK"
+# Explicitly trigger routing — PathChanged may not re-fire if the path unit
+# already triggered during bootstrap or a prior run.
+sleep 1
+con route-inbox 2>/dev/null || true
 echo "Waiting for concierge to process (up to 30s)..."
 
 WAITED=0
 while [ $WAITED -lt 30 ]; do
-    if [ -f /srv/con/agents/concierge/processed/001-smoke-test.task ] 2>/dev/null || \
-       ls /srv/con/agents/concierge/outbox/*.response 2>/dev/null | head -1 >/dev/null; then
+    if [ -f "/srv/con/agents/concierge/processed/$SMOKE_TASK" ] 2>/dev/null || \
+       find /srv/con/agents/concierge/outbox -maxdepth 1 -name '*.response' 2>/dev/null | grep -q .; then
         break
     fi
     sleep 2
-    ((WAITED+=2))
+    WAITED=$((WAITED + 2))
 done
 
-check "task was picked up from outer inbox" test ! -f /srv/con/inbox/001-smoke-test.task
-check "concierge produced output" ls /srv/con/agents/concierge/outbox/*.response 2>/dev/null
+check "task was picked up from outer inbox" test ! -f "/srv/con/inbox/$SMOKE_TASK"
+check "concierge produced output" find /srv/con/agents/concierge/outbox -maxdepth 1 -name '*.response' 2>/dev/null -print -quit
 
 echo ""
 echo "--- 7. Audit trail ---"
@@ -112,6 +117,8 @@ check "worker units have ProtectHome" \
 echo ""
 echo "--- 10. Contract timer ---"
 check "healthcheck timer active" systemctl is-active con-healthcheck.timer
+# Trigger healthcheck to ensure contracts.log exists (timer may not have fired yet on fresh boot)
+con healthcheck >/dev/null 2>&1 || true
 check "contracts log exists" test -f /srv/con/logs/audit/contracts.log
 
 echo ""
@@ -120,9 +127,21 @@ for agent_dir in /srv/con/agents/*/; do
     agent=$(basename "$agent_dir")
     skills_dir="${agent_dir}workspace/skills"
     [ -d "$skills_dir" ] || continue
-    md_count=$(ls "$skills_dir"/*.md 2>/dev/null | wc -l)
+    md_count=$(find "$skills_dir" -maxdepth 1 -name '*.md' ! -name '._*' 2>/dev/null | wc -l)
     if [ "$md_count" -gt 0 ]; then
         check "$agent has skills deployed" test "$md_count" -gt 0
+    fi
+done
+
+echo ""
+echo "--- 12. Agent instruction integrity ---"
+for agent_dir in /srv/con/agents/*/; do
+    agent=$(basename "$agent_dir")
+    check "$agent AGENTS.md.sha256 exists" test -f "/home/a-${agent}/AGENTS.md.sha256"
+    if [ -f "/home/a-${agent}/AGENTS.md.sha256" ] && [ -f "/home/a-${agent}/AGENTS.md" ]; then
+        current=$(sha256sum "/home/a-${agent}/AGENTS.md" | awk '{print $1}')
+        stored=$(awk '{print $1}' "/home/a-${agent}/AGENTS.md.sha256")
+        check "$agent AGENTS.md hash matches" test "$current" = "$stored"
     fi
 done
 

@@ -10,5 +10,4 @@ checks:
       test: "[ \"$RESULT\" = \"ok\" ]"
     on_fail:
       action: halt_agents
-      escalate: sysadmin
       message: "CON-SYS-005 FAILED: audit log directory is not writable"
