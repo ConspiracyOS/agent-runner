@@ -21,8 +21,8 @@ if [ -n "$RESPONSE" ]; then
     check "response has substance (>3 lines)" [ "$LINE_COUNT" -gt 3 ]
 
     # Should mention key directories
-    check "mentions agents directory" echo "$RESPONSE" | grep -qi "agents"
-    check "mentions inbox" echo "$RESPONSE" | grep -qi "inbox"
+    check "mentions agents directory" sh -c "echo '$RESPONSE' | grep -qi 'agents'"
+    check "mentions inbox" sh -c "echo '$RESPONSE' | grep -qi 'inbox'"
 
     # Should NOT contain raw error traces
     check "no panic or stack trace" \
@@ -42,7 +42,7 @@ if [ -n "$RESPONSE2" ]; then
     # If it routed, response should follow the format
     if echo "$RESPONSE2" | grep -qi "routed"; then
         check "routing response follows format" \
-            echo "$RESPONSE2" | grep -qiE "routed to.*sysadmin"
+            sh -c "echo '$RESPONSE2' | grep -qiE 'routed to.*sysadmin'"
     fi
 fi
 
@@ -60,7 +60,7 @@ if [ -n "$RESPONSE3" ]; then
 
     # Should contain actual system information, not just acknowledgment
     check "contains agent or systemd information" \
-        echo "$RESPONSE3" | grep -qiE "concierge|sysadmin|systemd|active|enabled|service|unit"
+        sh -c "echo '$RESPONSE3' | grep -qiE 'concierge|sysadmin|systemd|active|enabled|service|unit'"
 fi
 
 finish

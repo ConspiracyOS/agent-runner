@@ -23,8 +23,8 @@ check "new git commit exists" [ "$AFTER" -gt "$BEFORE" ]
 echo ""
 echo "--- 7c. Verify commit message format ---"
 LATEST_MSG=$(git -C /srv/con log -1 --format=%s)
-check "commit message contains agent name" echo "$LATEST_MSG" | grep -q "concierge"
-check "commit message contains trust level" echo "$LATEST_MSG" | grep -qE "\[(verified|unverified)\]"
+check "commit message contains agent name" sh -c "echo '$LATEST_MSG' | grep -q 'concierge'"
+check "commit message contains trust level" sh -c "echo '$LATEST_MSG' | grep -qE '\[(verified|unverified)\]'"
 
 echo ""
 echo "--- 7d. Verify git identity ---"

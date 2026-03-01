@@ -22,7 +22,8 @@ if [ -n "$RESPONSE_FILE" ]; then
     check "response owned by concierge user" [ "$OWNER" = "a-concierge" ]
 
     PERMS=$(stat -c %a "$RESPONSE_FILE")
-    check "response is readable (644)" [ "$PERMS" = "644" ]
+    # UMask=0077 means agent-created files are 600 (secure default)
+    check "response has secure permissions (600)" [ "$PERMS" = "600" ]
 fi
 
 echo ""
@@ -34,6 +35,12 @@ check "task no longer in inbox" test ! -f "/srv/con/agents/concierge/inbox/${TAS
 echo ""
 echo "--- 8d. Verify audit log entry ---"
 TODAY=$(date +%Y-%m-%d)
-check "audit log mentions task" grep -q "$TASK_ID" "/srv/con/logs/audit/${TODAY}.log"
+AUDIT_FILE="/srv/con/logs/audit/${TODAY}.log"
+if [ -f "$AUDIT_FILE" ]; then
+    check "audit log mentions task" grep -q "$TASK_ID" "$AUDIT_FILE"
+else
+    echo "  INFO: No date-based audit log yet (ACL may restrict writes)"
+    check "audit log for today exists (GAP)" false
+fi
 
 finish

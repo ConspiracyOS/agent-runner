@@ -18,7 +18,7 @@ check "concierge responded" test -n "$RESPONSE"
 # Concierge should ask for clarification, NOT route to sysadmin or make assumptions
 if [ -n "$RESPONSE" ]; then
     check "response asks for clarification" \
-        echo "$RESPONSE" | grep -qiE "clarif|what.*would|more.*detail|could you.*describe|what.*help|can you.*tell"
+        sh -c "echo '$RESPONSE' | grep -qiE 'clarif|what.*would|more.*detail|could you.*describe|what.*help|can you.*tell'"
     # Should NOT have routed to anyone
     check "did not route blindly" \
         sh -c "! echo '$RESPONSE' | grep -qi 'routed to'"
@@ -35,7 +35,7 @@ check "concierge responded to ambiguous request" test -n "$RESPONSE2"
 # Should ask what to monitor, what systems, etc.
 if [ -n "$RESPONSE2" ]; then
     check "asks about monitoring specifics" \
-        echo "$RESPONSE2" | grep -qiE "what.*monitor|which.*system|what.*service|what.*important|describe"
+        sh -c "echo '$RESPONSE2' | grep -qiE 'what.*monitor|which.*system|what.*service|what.*important|describe'"
 fi
 
 finish

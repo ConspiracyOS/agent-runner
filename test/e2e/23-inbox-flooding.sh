@@ -13,14 +13,14 @@ echo "--- 23a. Flood concierge inbox with 50 tasks ---"
 for i in $(seq -w 1 50); do
     echo "Flood task $i: respond with just the number $i" > "/srv/con/agents/concierge/inbox/flood-${i}.task"
 done
-TASK_COUNT=$(ls /srv/con/agents/concierge/inbox/flood-*.task 2>/dev/null | wc -l)
+TASK_COUNT=$(find /srv/con/agents/concierge/inbox/ -name 'flood-*.task' 2>/dev/null | wc -l)
 check "50 tasks landed in inbox" [ "$TASK_COUNT" -eq 50 ]
 
 echo ""
 echo "--- 23b. Verify con run processes tasks in order ---"
 # Don't actually run all 50 (too expensive with LLM). Just verify ordering logic.
 FIRST=$(ls /srv/con/agents/concierge/inbox/flood-*.task 2>/dev/null | sort | head -1)
-check "oldest task is flood-01" echo "$FIRST" | grep -q "flood-01"
+check "oldest task is flood-01" sh -c "echo '$FIRST' | grep -q 'flood-01'"
 
 echo ""
 echo "--- 23c. Verify system resources during flood ---"
@@ -31,7 +31,7 @@ check "disk still has >10% free during flood" [ "$DISK_FREE" -lt 90 ]
 echo ""
 echo "--- 23d. Clean up flood ---"
 rm -f /srv/con/agents/concierge/inbox/flood-*.task
-REMAINING=$(ls /srv/con/agents/concierge/inbox/flood-*.task 2>/dev/null | wc -l)
+REMAINING=$(find /srv/con/agents/concierge/inbox/ -name 'flood-*.task' 2>/dev/null | wc -l)
 check "cleanup removed all flood tasks" [ "$REMAINING" -eq 0 ]
 
 echo ""

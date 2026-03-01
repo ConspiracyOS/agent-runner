@@ -17,8 +17,8 @@ check "concierge responded" test -n "$RESPONSE"
 
 if [ -n "$RESPONSE" ]; then
     # Concierge should check ls /srv/con/agents/ and answer directly
-    check "mentions concierge" echo "$RESPONSE" | grep -qi "concierge"
-    check "mentions sysadmin" echo "$RESPONSE" | grep -qi "sysadmin"
+    check "mentions concierge" sh -c "echo '$RESPONSE' | grep -qi 'concierge'"
+    check "mentions sysadmin" sh -c "echo '$RESPONSE' | grep -qi 'sysadmin'"
 fi
 
 echo ""
@@ -32,7 +32,7 @@ check "concierge responded to knowledge question" test -n "$RESPONSE2"
 if [ -n "$RESPONSE2" ]; then
     # Should answer from its own context (AGENTS.md mentions contracts)
     check "explains detective contracts" \
-        echo "$RESPONSE2" | grep -qiE "contract|detect|monitor|check|verif|health"
+        sh -c "echo '$RESPONSE2' | grep -qiE 'contract|detect|monitor|check|verif|health'"
 fi
 
 echo ""
@@ -46,7 +46,7 @@ check "concierge responded to commission request" test -n "$RESPONSE3"
 if [ -n "$RESPONSE3" ]; then
     # This should be routed to sysadmin — clear system operation
     check "routes to sysadmin" \
-        echo "$RESPONSE3" | grep -qiE "sysadmin|routed|commission|provision"
+        sh -c "echo '$RESPONSE3' | grep -qiE 'sysadmin|routed|commission|provision'"
 fi
 
 # Verify a task actually landed in sysadmin inbox

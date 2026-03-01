@@ -36,7 +36,7 @@ check "sysadmin responded" test -n "$RESPONSE"
 
 # The response should mention at least one .md skill file
 if [ -n "$RESPONSE" ]; then
-    check "response mentions skill files" echo "$RESPONSE" | grep -qiE "\.md|commission|create"
+    check "response mentions skill files" sh -c "echo '$RESPONSE' | grep -qiE '\.md|commission|create'"
 fi
 
 finish

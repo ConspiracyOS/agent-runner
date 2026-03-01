@@ -23,10 +23,12 @@ TODAY=$(date +%Y-%m-%d)
 AUDIT_FILE="/srv/con/logs/audit/${TODAY}.log"
 if [ -f "$AUDIT_FILE" ]; then
     check "audit log entry for task" grep -q "$TASK_ID" "$AUDIT_FILE"
-    check "audit log shows trust level" grep "$TASK_ID" "$AUDIT_FILE" | grep -q "trust:"
-    check "audit log shows agent name" grep "$TASK_ID" "$AUDIT_FILE" | grep -q "concierge"
+    check "audit log shows trust level" sh -c "grep '$TASK_ID' '$AUDIT_FILE' | grep -q 'trust:'"
+    check "audit log shows agent name" sh -c "grep '$TASK_ID' '$AUDIT_FILE' | grep -q 'concierge'"
 else
-    check "audit log file exists" false
+    echo "  GAP: No audit log for concierge — ACL on /srv/con/logs/audit/ only allows a-sysadmin"
+    echo "  FIX: Add ACL for agents group or per-agent audit write ACL"
+    check "audit log file exists (GAP — ACL blocks concierge writes)" false
 fi
 
 echo ""
@@ -34,8 +36,8 @@ echo "--- 30c. Verify ledger records the run ---"
 LEDGER_FILE="/srv/con/ledger/${TODAY}.tsv"
 if [ -f "$LEDGER_FILE" ]; then
     check "ledger entry for task" grep -q "$TASK_ID" "$LEDGER_FILE"
-    check "ledger shows model" grep "$TASK_ID" "$LEDGER_FILE" | grep -qE "sonnet|opus|haiku|gpt|claude|deepseek|gemini"
-    check "ledger shows timestamp" grep "$TASK_ID" "$LEDGER_FILE" | grep -qE "^[0-9]{4}-"
+    check "ledger shows model" sh -c "grep '$TASK_ID' '$LEDGER_FILE' | grep -qE 'sonnet|opus|haiku|gpt|claude|deepseek|gemini'"
+    check "ledger shows timestamp" sh -c "grep '$TASK_ID' '$LEDGER_FILE' | grep -qE '^[0-9]{4}-'"
 else
     echo "  INFO: No ledger file (ledger may not be enabled)"
     check "ledger file exists" false
@@ -46,7 +48,7 @@ echo "--- 30d. Verify git history captures the state change ---"
 GIT_LOG=$(git -C /srv/con log --oneline -5 2>/dev/null || echo "")
 if [ -n "$GIT_LOG" ]; then
     check "git log has recent entries" test -n "$GIT_LOG"
-    check "git log mentions concierge" echo "$GIT_LOG" | grep -q "concierge"
+    check "git log mentions concierge" sh -c "echo '$GIT_LOG' | grep -q 'concierge'"
 fi
 
 echo ""
